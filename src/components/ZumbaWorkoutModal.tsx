@@ -68,7 +68,7 @@ export const ZumbaWorkoutModal: React.FC<ZumbaWorkoutModalProps> = ({
     };
   }, [isActive]);
 
-  // Rotate dance moves every 15 seconds while active
+  // Rotate dance moves every 12 seconds while active
   useEffect(() => {
     let moveInterval: number | null = null;
     if (isActive) {
@@ -81,18 +81,6 @@ export const ZumbaWorkoutModal: React.FC<ZumbaWorkoutModalProps> = ({
     };
   }, [isActive]);
 
-  // Audio start / stop management
-  useEffect(() => {
-    if (isActive && musicEnabled) {
-      zumbaAudio.startWorkoutMusic();
-    } else {
-      zumbaAudio.stopWorkoutMusic();
-    }
-    return () => {
-      zumbaAudio.stopWorkoutMusic();
-    };
-  }, [isActive, musicEnabled]);
-
   const handleToggleActive = () => {
     soundManager.playSelect();
     setIsActive(!isActive);
@@ -102,13 +90,11 @@ export const ZumbaWorkoutModal: React.FC<ZumbaWorkoutModalProps> = ({
     soundManager.playRefuse();
     setIsActive(false);
     setSecondsElapsed(0);
-    zumbaAudio.stopWorkoutMusic();
   };
 
   const handleFinishWorkout = () => {
     setIsActive(false);
-    zumbaAudio.stopWorkoutMusic();
-    soundManager.playHappy();
+    soundManager.playZumbaFinishBeep();
     setShowCelebration(true);
   };
 
@@ -297,26 +283,6 @@ export const ZumbaWorkoutModal: React.FC<ZumbaWorkoutModalProps> = ({
 
             {/* Workout Controls */}
             <div className="flex items-center gap-3">
-              {/* Sound toggle */}
-              <button
-                onClick={() => {
-                  const next = !musicEnabled;
-                  setMusicEnabled(next);
-                  if (isActive) {
-                    if (next) zumbaAudio.startWorkoutMusic();
-                    else zumbaAudio.stopWorkoutMusic();
-                  }
-                }}
-                className={`p-3 rounded-2xl border transition-colors cursor-pointer ${
-                  musicEnabled
-                    ? 'bg-amber-400/20 border-amber-400 text-amber-300'
-                    : 'bg-slate-800 border-slate-700 text-slate-500'
-                }`}
-                title={musicEnabled ? 'Música activa' : 'Música silenciada'}
-              >
-                {musicEnabled ? <Volume2 className="w-5 h-5" /> : <VolumeX className="w-5 h-5" />}
-              </button>
-
               {/* Play / Pause Main Button */}
               <button
                 onClick={handleToggleActive}

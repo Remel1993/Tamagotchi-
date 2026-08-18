@@ -26,7 +26,16 @@ import {
 } from '../types/tamagotchi';
 import { STAGES_CONFIG } from '../services/storage';
 import { soundManager } from '../services/soundEffects';
-import { getPettingPhrase, getRandomStagePhrase, getEmotionInfo } from '../services/dialogues';
+import {
+  getPettingPhrase,
+  getRandomStagePhrase,
+  getEmotionInfo,
+  getContextualDialogue,
+  getCleaningThankYouPhrase,
+  getMedicineThankYouPhrase,
+  getFeedMealThankYouPhrase,
+  getFeedSnackThankYouPhrase
+} from '../services/dialogues';
 
 interface TamagotchiDeviceProps {
   state: TamagotchiState;
@@ -433,42 +442,59 @@ export const TamagotchiDevice: React.FC<TamagotchiDeviceProps> = ({
     }, durationMs);
   };
 
+  const dialogueTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Clean and robust dialogue display with reliable auto-dismiss
+  const displayDialogue = (phrase: { text: string; emoji: string } | null, durationMs = 3500) => {
+    if (dialogueTimeoutRef.current) {
+      clearTimeout(dialogueTimeoutRef.current);
+      dialogueTimeoutRef.current = null;
+    }
+    setCurrentDialogue(phrase);
+    if (phrase) {
+      dialogueTimeoutRef.current = setTimeout(() => {
+        setCurrentDialogue(null);
+        dialogueTimeoutRef.current = null;
+      }, durationMs);
+    }
+  };
+
+  useEffect(() => {
+    return () => {
+      if (dialogueTimeoutRef.current) {
+        clearTimeout(dialogueTimeoutRef.current);
+      }
+    };
+  }, []);
+
   const showToast = (msg: string) => {
     setSpeechToast(msg);
     setTimeout(() => setSpeechToast(null), 3000);
   };
 
-  // Petting handler with randomized cute phrases & chirps
+  // Petting handler with randomized cute phrases & chirps reflecting emotion state
   const triggerPettingWithDialogue = () => {
     if (state.stage === EvolutionStage.DEAD) return;
 
     soundManager.playPetChirp();
     onPet();
-    const phrase = getPettingPhrase(state.stage);
-    setCurrentDialogue(phrase);
-    showToast(`💖 ${phrase.text}`);
-
-    setTimeout(() => {
-      setCurrentDialogue(null);
-    }, 4500);
+    const phrase = getContextualDialogue(state, true);
+    displayDialogue(phrase, 3500);
   };
 
-  // Periodic ambient pet speech dialogue according to stage & mood
+  // Periodic ambient pet speech dialogue according to stage, emotion & mood (every ~16s)
   useEffect(() => {
     if (state.isDead || state.isSleeping || activeScreen !== 'main') return;
 
     const interval = setInterval(() => {
       if (Math.random() < 0.65 && !currentDialogue) {
-        const stagePhrase = getRandomStagePhrase(state.stage);
-        setCurrentDialogue(stagePhrase);
-        setTimeout(() => {
-          setCurrentDialogue(null);
-        }, 4000);
+        const stagePhrase = getContextualDialogue(state, false);
+        displayDialogue(stagePhrase, 3500);
       }
-    }, 18000);
+    }, 16000);
 
     return () => clearInterval(interval);
-  }, [state.stage, state.isDead, state.isSleeping, activeScreen, currentDialogue]);
+  }, [state, activeScreen, currentDialogue]);
 
   const emotionInfo = getEmotionInfo(state);
 
@@ -537,9 +563,21 @@ export const TamagotchiDevice: React.FC<TamagotchiDeviceProps> = ({
           break;
 
         case 1: // Lights
+          if (state.isSleeping || !state.lightsOn) {
+            const sleepElapsed = (state.elapsedSeconds || 0) - (state.sleepStartSeconds || 0);
+            const SLEEP_DURATION = 8 * 3600; // 28,800 seconds (8 hours)
+            if (sleepElapsed < SLEEP_DURATION && (state.sleepStartSeconds !== undefined)) {
+              soundManager.playRefuse();
+              const remSec = Math.max(0, SLEEP_DURATION - sleepElapsed);
+              const remHours = Math.floor(remSec / 3600);
+              const remMin = Math.floor((remSec % 3600) / 60);
+              showToast(`💤 Duerme profundamente (Restan ${remHours > 0 ? `${remHours}h ` : ''}${remMin}m de 8h). Despertará solo.`);
+              return;
+            }
+          }
           soundManager.playLightSwitch();
           onToggleLights();
-          showToast(state.lightsOn ? '💡 Luz apagada (Buenas noches)' : '💡 Luz encendida');
+          showToast(state.lightsOn ? '🌙 Luz apagada: Ciclo de 8h de sueño iniciado' : '☀️ Luz encendida: ¡Buenos días!');
           break;
 
         case 2: // Game Selection Menu
@@ -565,6 +603,8 @@ export const TamagotchiDevice: React.FC<TamagotchiDeviceProps> = ({
           soundManager.playMedicine();
           triggerAnimation('animating_medicine', 1600, () => {
             onGiveMedicine();
+            const thankPhrase = getMedicineThankYouPhrase(state);
+            displayDialogue(thankPhrase, 4000);
             showToast('✨ ¡Medicina administrada con éxito!');
           });
           break;
@@ -578,6 +618,8 @@ export const TamagotchiDevice: React.FC<TamagotchiDeviceProps> = ({
           soundManager.playFlush();
           triggerAnimation('animating_bath', 1600, () => {
             onCleanPoop();
+            const thankPhrase = getCleaningThankYouPhrase(state);
+            displayDialogue(thankPhrase, 4000);
             showToast('🦆 ¡Popó limpiada! La pantalla quedó reluciente.');
           });
           break;
@@ -613,9 +655,13 @@ export const TamagotchiDevice: React.FC<TamagotchiDeviceProps> = ({
       triggerAnimation('animating_eating', 1500, () => {
         if (choice === 'meal') {
           onFeedMeal();
+          const thankPhrase = getFeedMealThankYouPhrase(state);
+          displayDialogue(thankPhrase, 4000);
           showToast('🍚 ¡Comió comida! (+1 ❤️ Hambre, +1g)');
         } else {
           onFeedSnack();
+          const thankPhrase = getFeedSnackThankYouPhrase(state);
+          displayDialogue(thankPhrase, 4000);
           showToast('🍰 ¡Comió postre! (+1 ❤️ Felicidad, +2g)');
         }
       });
@@ -666,30 +712,35 @@ export const TamagotchiDevice: React.FC<TamagotchiDeviceProps> = ({
   // Render Status Meter Page
   const renderStatusPage = () => {
     switch (meterPage) {
-      case 0: // Age & Weight
+      case 0: // Age & Weight / Stage
+        const isEgg = state.stage < EvolutionStage.BABY_CHICK;
         return (
-          <div className="w-full h-full flex flex-col items-center justify-center space-y-2 p-2">
+          <div className="w-full h-full flex flex-col items-center justify-center space-y-2 p-2 text-center">
             <span className="text-xs font-black tracking-wider uppercase border-b-2 border-current pb-0.5">
-              - EDAD & PESO -
+              {isEgg ? '- EDAD & INCUBACIÓN -' : '- EDAD & PESO -'}
             </span>
-            <div className="flex flex-col items-center space-y-1 font-mono text-sm font-bold">
-              <div>EDAD: {state.ageDays} DÍAS</div>
-              <div>PESO: {state.weightGrams} g</div>
-              <div className="text-[10px] mt-1 opacity-75">GENERACIÓN: G{state.generation}</div>
+            <div className="flex flex-col items-center space-y-1 font-mono text-xs font-bold">
+              <div>EDAD: {state.ageDays} / 7 DÍAS</div>
+              <div>{isEgg ? `FASE: ${stageConfig.name}` : `PESO: ${state.weightGrams} g`}</div>
+              <div className="text-[10px] mt-0.5 opacity-75">
+                {isEgg ? `Eclosión: Día 5 (Faltan ${Math.max(0, 5 - state.ageDays)}d)` : `GENERACIÓN: G${state.generation}`}
+              </div>
             </div>
-            <span className="text-[9px] opacity-70 mt-2">Pág 1/5 • Pulsa A para ver más</span>
+            <span className="text-[9px] opacity-70 mt-1">Pág 1/5 • Pulsa A para ver más</span>
           </div>
         );
 
-      case 1: // Vital Health Bar (0-100%)
+      case 1: // Vital Health & Temperature Bar (0-100%)
         const hp = typeof state.healthPercent === 'number' ? state.healthPercent : 100;
-        const hpStatus = hp > 70 ? 'Excelente' : hp > 40 ? 'Estable' : hp > 20 ? '¡Alerta!' : '¡CRÍTICA!';
+        const isEggStage = state.stage < EvolutionStage.BABY_CHICK;
+        const eggTemp = (36.0 + (hp / 100) * 2.2).toFixed(1);
+        const hpStatus = hp > 70 ? (isEggStage ? '🔥 Óptimo y Cálido' : 'Excelente') : hp > 40 ? (isEggStage ? '♨️ Tibio' : 'Estable') : hp > 20 ? (isEggStage ? '❄️ ¡Enfriándose!' : '¡Alerta!') : (isEggStage ? '🧊 ¡PELIGRO FRÍO!' : '¡CRÍTICA!');
         return (
-          <div className="w-full h-full flex flex-col items-center justify-center space-y-2 p-2">
+          <div className="w-full h-full flex flex-col items-center justify-center space-y-1.5 p-2 text-center">
             <span className="text-xs font-black tracking-wider uppercase border-b-2 border-current pb-0.5">
-              - BARRA DE SALUD (6H / 24H) -
+              {isEggStage ? '- CALOR VITAL & SALUD -' : '- BARRA DE SALUD (6H / 24H) -'}
             </span>
-            <div className="w-44 h-6 border-2 border-current p-0.5 rounded-xs my-2 flex bg-black/10">
+            <div className="w-44 h-5 border-2 border-current p-0.5 rounded-xs my-1 flex bg-black/10">
               <div
                 className={`h-full transition-all duration-500 ${
                   hp > 50 ? 'bg-current' : hp > 25 ? 'bg-amber-600 animate-pulse' : 'bg-red-600 animate-bounce'
@@ -697,16 +748,35 @@ export const TamagotchiDevice: React.FC<TamagotchiDeviceProps> = ({
                 style={{ width: `${Math.max(4, hp)}%` }}
               />
             </div>
-            <div className="flex items-center gap-2 font-mono text-xs font-bold">
-              <span>{hp}%</span>
+            <div className="flex items-center justify-center gap-2 font-mono text-xs font-bold">
+              <span>{isEggStage ? `🌡️ ${eggTemp}°C (${hp}%)` : `${hp}%`}</span>
               <span className="text-[10px] opacity-80 uppercase">({hpStatus})</span>
             </div>
-            <span className="text-[8px] opacity-70 text-center">Baja gradualmente: en 6h a 75%, en 24h a 0%</span>
+            <span className="text-[8px] opacity-75 text-center leading-tight">
+              {isEggStage
+                ? 'El huevo absorbe calor con caricias, minijuegos y Zumba'
+                : 'Baja gradualmente: en 6h a 75%, en 24h a 0%'}
+            </span>
             <span className="text-[9px] opacity-70">Pág 2/5 • Pulsa A para ver más</span>
           </div>
         );
 
-      case 2: // Hungry Hearts
+      case 2: // Egg Warmth Sources / Hungry Hearts
+        if (state.stage < EvolutionStage.BABY_CHICK) {
+          return (
+            <div className="w-full h-full flex flex-col items-center justify-center space-y-1 p-2 text-left">
+              <span className="text-[11px] font-black tracking-wider uppercase border-b-2 border-current pb-0.5 text-center w-full">
+                - FUENTES DE CALOR (1/2) -
+              </span>
+              <div className="text-[9px] space-y-1 font-mono font-bold w-full pl-1 mt-1">
+                <div>🤲 <span className="underline">Caricias</span>: Haz clic (+3% calor)</div>
+                <div>🎮 <span className="underline">Minijuegos</span>: Victoria (+15% calor)</div>
+                <div>💃 <span className="underline">Zumba</span>: 20m (+35% calor, +24h)</div>
+              </div>
+              <span className="text-[9px] opacity-70 pt-1 text-center w-full">Pág 3/5 • Pulsa A para ver más</span>
+            </div>
+          );
+        }
         return (
           <div className="w-full h-full flex flex-col items-center justify-center space-y-2 p-2">
             <span className="text-xs font-black tracking-wider uppercase border-b-2 border-current pb-0.5">
@@ -726,7 +796,22 @@ export const TamagotchiDevice: React.FC<TamagotchiDeviceProps> = ({
           </div>
         );
 
-      case 3: // Happy Hearts
+      case 3: // Egg Nest Protection / Happy Hearts
+        if (state.stage < EvolutionStage.BABY_CHICK) {
+          return (
+            <div className="w-full h-full flex flex-col items-center justify-center space-y-1 p-2 text-left">
+              <span className="text-[11px] font-black tracking-wider uppercase border-b-2 border-current pb-0.5 text-center w-full">
+                - PROTECCIÓN DEL FRÍO (2/2) -
+              </span>
+              <div className="text-[9px] space-y-1 font-mono font-bold w-full pl-1 mt-1">
+                <div>🪺 <span className="underline">Retos Nido</span>: Aislante térmico</div>
+                <div>💤 <span className="underline">Sueño 8h</span>: Conserva temperatura</div>
+                <div>💡 <span className="underline">Apagar Luz</span>: Sueño profundo</div>
+              </div>
+              <span className="text-[9px] opacity-70 pt-1 text-center w-full">Pág 4/5 • Pulsa A para ver más</span>
+            </div>
+          );
+        }
         return (
           <div className="w-full h-full flex flex-col items-center justify-center space-y-2 p-2">
             <span className="text-xs font-black tracking-wider uppercase border-b-2 border-current pb-0.5">
@@ -746,11 +831,11 @@ export const TamagotchiDevice: React.FC<TamagotchiDeviceProps> = ({
           </div>
         );
 
-      case 4: // Discipline Meter
+      case 4: // Discipline / Incubation Care
         return (
           <div className="w-full h-full flex flex-col items-center justify-center space-y-2 p-2">
             <span className="text-xs font-black tracking-wider uppercase border-b-2 border-current pb-0.5">
-              - DISCIPLINA -
+              {state.stage < EvolutionStage.BABY_CHICK ? '- CUIDADO DEL NIDO -' : '- DISCIPLINA -'}
             </span>
             <div className="w-40 h-6 border-2 border-current p-0.5 rounded-xs my-2 flex">
               <div
@@ -769,45 +854,90 @@ export const TamagotchiDevice: React.FC<TamagotchiDeviceProps> = ({
   };
 
   // Render Food Selection Menu
-  const renderFoodSelect = () => (
-    <div className="w-full h-full flex flex-col items-center justify-center space-y-3 p-3">
-      <span className="text-xs font-black uppercase tracking-wider border-b-2 border-current pb-0.5">
-        - SELECCIÓN DE COMIDA -
-      </span>
-      <div className="flex items-center justify-around w-full px-4">
-        {/* Meal Choice */}
-        <div
-          className={`flex flex-col items-center p-2 rounded-lg border-2 transition-all cursor-pointer ${
-            foodChoice === 'meal'
-              ? 'border-current font-black scale-110 bg-black/10'
-              : 'border-transparent opacity-60'
-          }`}
-          onClick={() => setFoodChoice('meal')}
-        >
-          <span className="text-3xl">🍚</span>
-          <span className="text-[11px] font-bold mt-1">COMIDA</span>
-          <span className="text-[9px] opacity-75">+1 Hambre, +5% Salud</span>
-        </div>
+  const renderFoodSelect = () => {
+    const isEgg = state.stage < EvolutionStage.BABY_CHICK;
+    if (isEgg) {
+      return (
+        <div className="w-full h-full flex flex-col items-center justify-center space-y-2 p-2.5">
+          <span className="text-xs font-black uppercase tracking-wider border-b-2 border-current pb-0.5">
+            - CALOR VITAL DEL HUEVO -
+          </span>
+          <div className="flex items-center justify-around w-full px-2">
+            {/* Hand Warmth */}
+            <div
+              className={`flex flex-col items-center p-2 rounded-lg border-2 transition-all cursor-pointer ${
+                foodChoice === 'meal'
+                  ? 'border-current font-black scale-105 bg-black/10'
+                  : 'border-transparent opacity-60'
+              }`}
+              onClick={() => setFoodChoice('meal')}
+            >
+              <span className="text-2xl">🤲</span>
+              <span className="text-[10px] font-black mt-1">DAR CALOR</span>
+              <span className="text-[8px] opacity-75">+Calor de tus manos</span>
+            </div>
 
-        {/* Snack Choice */}
-        <div
-          className={`flex flex-col items-center p-2 rounded-lg border-2 transition-all cursor-pointer ${
-            foodChoice === 'snack'
-              ? 'border-current font-black scale-110 bg-black/10'
-              : 'border-transparent opacity-60'
-          }`}
-          onClick={() => setFoodChoice('snack')}
-        >
-          <span className="text-3xl">🍰</span>
-          <span className="text-[11px] font-bold mt-1">POSTRE</span>
-          <span className="text-[9px] opacity-75">+1 Feliz, +2g</span>
+            {/* Nest Warmth */}
+            <div
+              className={`flex flex-col items-center p-2 rounded-lg border-2 transition-all cursor-pointer ${
+                foodChoice === 'snack'
+                  ? 'border-current font-black scale-105 bg-black/10'
+                  : 'border-transparent opacity-60'
+              }`}
+              onClick={() => setFoodChoice('snack')}
+            >
+              <span className="text-2xl">🪺</span>
+              <span className="text-[10px] font-black mt-1">ARROPAR</span>
+              <span className="text-[8px] opacity-75">+Nido protegido</span>
+            </div>
+          </div>
+          <div className="text-[9px] text-center font-bold">
+            [A] Cambiar • [B] Transferir Calor • [C] Volver
+          </div>
+        </div>
+      );
+    }
+
+    return (
+      <div className="w-full h-full flex flex-col items-center justify-center space-y-3 p-3">
+        <span className="text-xs font-black uppercase tracking-wider border-b-2 border-current pb-0.5">
+          - SELECCIÓN DE COMIDA -
+        </span>
+        <div className="flex items-center justify-around w-full px-4">
+          {/* Meal Choice */}
+          <div
+            className={`flex flex-col items-center p-2 rounded-lg border-2 transition-all cursor-pointer ${
+              foodChoice === 'meal'
+                ? 'border-current font-black scale-110 bg-black/10'
+                : 'border-transparent opacity-60'
+            }`}
+            onClick={() => setFoodChoice('meal')}
+          >
+            <span className="text-3xl">🍚</span>
+            <span className="text-[11px] font-bold mt-1">COMIDA</span>
+            <span className="text-[9px] opacity-75">+1 Hambre, +5% Salud</span>
+          </div>
+
+          {/* Snack Choice */}
+          <div
+            className={`flex flex-col items-center p-2 rounded-lg border-2 transition-all cursor-pointer ${
+              foodChoice === 'snack'
+                ? 'border-current font-black scale-110 bg-black/10'
+                : 'border-transparent opacity-60'
+            }`}
+            onClick={() => setFoodChoice('snack')}
+          >
+            <span className="text-3xl">🍰</span>
+            <span className="text-[11px] font-bold mt-1">POSTRE</span>
+            <span className="text-[9px] opacity-75">+1 Feliz, +2g</span>
+          </div>
+        </div>
+        <div className="text-[10px] text-center font-bold">
+          [A] Cambiar • [B] Alimentar • [C] Volver
         </div>
       </div>
-      <div className="text-[10px] text-center font-bold">
-        [A] Cambiar • [B] Alimentar • [C] Volver
-      </div>
-    </div>
-  );
+    );
+  };
 
   // Render 3 Mini-Games Selection Menu
   const renderGameSelectScreen = () => {
@@ -1435,9 +1565,9 @@ export const TamagotchiDevice: React.FC<TamagotchiDeviceProps> = ({
               // Main Normal Pet Living Screen
               <>
                 {/* Top Status Header inside LCD */}
-                <div className="w-full flex items-center justify-between z-10 text-[10px] sm:text-[11px] font-bold">
+                <div className="w-full flex items-center justify-between z-10 text-[9px] font-bold px-0.5 pb-0.5 border-b border-black/10 shrink-0">
                   <div className="flex items-center gap-1">
-                    <span className="bg-black/20 px-1.5 py-0.5 rounded font-mono">
+                    <span className="bg-black/20 px-1.5 py-0.5 rounded font-mono text-[9px]">
                       {state.name}
                     </span>
                     <span className={`px-1.5 py-0.5 rounded text-[9px] font-black ${
@@ -1455,57 +1585,72 @@ export const TamagotchiDevice: React.FC<TamagotchiDeviceProps> = ({
                   <button
                     onClick={triggerPettingWithDialogue}
                     title={emotionInfo.description}
-                    className="flex items-center gap-1 bg-black/15 hover:bg-black/25 px-1.5 py-0.5 rounded-full text-[9px] font-bold cursor-pointer transition-all active:scale-95 border border-black/10"
+                    className="flex items-center gap-1 bg-black/15 hover:bg-black/25 px-1.5 py-0.5 rounded-full text-[9px] font-bold cursor-pointer transition-all active:scale-95 border border-black/10 max-w-[130px] truncate"
                   >
                     <span>{emotionInfo.icon}</span>
-                    <span className="opacity-90">{emotionInfo.label}</span>
+                    <span className="truncate">{emotionInfo.label}</span>
                   </button>
 
-                  {/* Hungry & Happy heart icons preview */}
-                  <div className="flex items-center gap-1.5 font-mono text-[9px] sm:text-[10px]">
-                    <div className="flex items-center" title="Hambre">
-                      <span className="mr-0.5">🍖</span>
-                      {state.hungryHearts}/4
+                  {/* Egg Temperature or Hungry/Happy heart icons preview */}
+                  {state.stage < EvolutionStage.BABY_CHICK ? (
+                    <div
+                      className="flex items-center gap-1 font-mono text-[9px] font-black bg-amber-500/20 text-amber-950 dark:text-amber-300 px-1.5 py-0.5 rounded cursor-pointer border border-amber-500/40"
+                      title="Calor Vital e Incubación: El huevo absorbe calor con caricias, minijuegos y Zumba. Pulsa para ver."
+                      onClick={() => {
+                        soundManager.playSelect();
+                        setActiveScreen('status_page');
+                        setMeterPage(1);
+                      }}
+                    >
+                      <span className="text-[10px]">🌡️</span>
+                      <span>{(36.0 + ((state.healthPercent ?? 100) / 100) * 2.2).toFixed(1)}°C</span>
                     </div>
-                    <div className="flex items-center" title="Felicidad">
-                      <span className="mr-0.5">💖</span>
-                      {state.happyHearts}/4
+                  ) : (
+                    <div className="flex items-center gap-1 font-mono text-[9px]">
+                      <div className="flex items-center" title="Hambre">
+                        <span className="mr-0.5">🍖</span>
+                        {state.hungryHearts}/4
+                      </div>
+                      <div className="flex items-center" title="Felicidad">
+                        <span className="mr-0.5">💖</span>
+                        {state.happyHearts}/4
+                      </div>
                     </div>
-                  </div>
+                  )}
                 </div>
 
-                {/* Interactive Dialogue Speech Balloon */}
+                {/* Interactive Dialogue Speech Balloon & Action Toast (Small, readable, non-cut, auto-dismissing) */}
                 <AnimatePresence>
-                  {currentDialogue && !state.isDead && (
+                  {currentDialogue && !state.isDead ? (
                     <motion.div
-                      initial={{ opacity: 0, scale: 0.85, y: -6 }}
+                      key="dialogue-balloon"
+                      initial={{ opacity: 0, scale: 0.92, y: -4 }}
                       animate={{ opacity: 1, scale: 1, y: 0 }}
-                      exit={{ opacity: 0, scale: 0.85, y: -4 }}
-                      onClick={triggerPettingWithDialogue}
-                      className="z-30 my-1 bg-amber-50 text-amber-950 dark:bg-slate-900 dark:text-amber-200 border-2 border-amber-400/80 px-2.5 py-1 rounded-2xl shadow-lg flex items-center gap-1.5 text-[10px] sm:text-[11px] font-bold max-w-[92%] cursor-pointer active:scale-95 text-center"
+                      exit={{ opacity: 0, scale: 0.92, y: -2 }}
+                      transition={{ duration: 0.18 }}
+                      onClick={() => setCurrentDialogue(null)}
+                      className="absolute top-7 left-1/2 -translate-x-1/2 max-w-[92%] z-30 bg-amber-50/95 text-amber-950 dark:bg-slate-900/95 dark:text-amber-200 border border-amber-400/80 px-2.5 py-1 rounded-lg shadow-md flex items-center justify-center gap-1.5 text-[8.5px] sm:text-[9.5px] font-bold cursor-pointer active:scale-95 text-center leading-snug backdrop-blur-xs select-none"
+                      title="Haz clic para cerrar"
                     >
-                      <span className="text-sm shrink-0">{currentDialogue.emoji}</span>
-                      <span className="leading-tight select-none">"{currentDialogue.text}"</span>
+                      <span className="text-xs shrink-0">{currentDialogue.emoji}</span>
+                      <span className="break-words font-semibold text-center leading-tight">"{currentDialogue.text}"</span>
                     </motion.div>
-                  )}
-                </AnimatePresence>
-
-                {/* Toast fallback */}
-                <AnimatePresence>
-                  {speechToast && !currentDialogue && (
+                  ) : speechToast ? (
                     <motion.div
-                      initial={{ opacity: 0, y: -5 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      exit={{ opacity: 0 }}
-                      className="z-20 bg-black/85 text-amber-300 border border-amber-400/50 text-[10px] font-bold px-2.5 py-0.5 rounded-full shadow-md text-center max-w-[90%]"
+                      key="speech-toast"
+                      initial={{ opacity: 0, scale: 0.92, y: -4 }}
+                      animate={{ opacity: 1, scale: 1, y: 0 }}
+                      exit={{ opacity: 0, scale: 0.92, y: -2 }}
+                      transition={{ duration: 0.18 }}
+                      className="absolute top-7 left-1/2 -translate-x-1/2 max-w-[92%] z-30 bg-black/80 text-amber-300 border border-amber-400/50 px-2.5 py-1 rounded-lg shadow-md flex items-center justify-center gap-1.5 text-[8.5px] sm:text-[9.5px] font-bold text-center leading-snug backdrop-blur-xs select-none pointer-events-none"
                     >
-                      {speechToast}
+                      <span className="break-words font-semibold text-center leading-tight">{speechToast}</span>
                     </motion.div>
-                  )}
+                  ) : null}
                 </AnimatePresence>
 
                 {/* Central Pet / Scene Rendering */}
-                <div className="my-auto z-10 flex flex-col items-center justify-center flex-1 w-full">
+                <div className="my-auto z-10 flex flex-col items-center justify-center flex-1 w-full min-h-[140px]">
                   <EggPetRenderer
                     stage={state.stage}
                     displayMode={displayMode}
@@ -1513,6 +1658,9 @@ export const TamagotchiDevice: React.FC<TamagotchiDeviceProps> = ({
                     lightsOn={state.lightsOn}
                     isSick={state.isSick}
                     poopCount={state.poopCount}
+                    hungryHearts={state.hungryHearts}
+                    happyHearts={state.happyHearts}
+                    disciplinePercent={state.disciplinePercent}
                     activeScreen={activeScreen}
                     foodType={foodChoice}
                     healthPercent={state.healthPercent ?? state.health ?? 100}
@@ -1520,15 +1668,24 @@ export const TamagotchiDevice: React.FC<TamagotchiDeviceProps> = ({
                   />
                 </div>
 
-                {/* Bottom Screen Info / Attention Prompt */}
-                <div className="w-full flex items-center justify-between z-10 text-[9px] sm:text-[10px] font-bold pt-1 border-t border-black/15">
-                  <span className="opacity-75">{stageConfig.name}</span>
+                {/* Bottom Screen Info / Attention Prompt (Pinned cleanly to bottom) */}
+                <div className="w-full flex items-center justify-between z-10 text-[9px] font-bold pt-1 px-1 border-t border-black/15 bg-black/5 rounded-b-lg shrink-0">
+                  <span className="opacity-80 flex items-center gap-1">
+                    <span>{stageConfig.name}</span>
+                  </span>
                   {state.isDead ? (
                     <span className="text-red-500 font-black animate-pulse">
                       ¡FALLECIDO! PULSA B
                     </span>
                   ) : state.isSleeping ? (
-                    <span className="opacity-80">Durmiendo (Zzz...)</span>
+                    <span className="opacity-90 font-mono text-[9px] flex items-center gap-1">
+                      <span>💤 Duerme</span>
+                      {state.sleepStartSeconds !== undefined && (
+                        <span>
+                          ({Math.max(0, Math.floor((28800 - Math.min(28800, (state.elapsedSeconds || 0) - state.sleepStartSeconds)) / 3600))}h {Math.max(0, Math.floor(((28800 - Math.min(28800, (state.elapsedSeconds || 0) - state.sleepStartSeconds)) % 3600) / 60))}m)
+                        </span>
+                      )}
+                    </span>
                   ) : state.isSick ? (
                     <span className="text-red-600 font-black animate-bounce">
                       ¡ENFERMO! 💉
@@ -1538,7 +1695,7 @@ export const TamagotchiDevice: React.FC<TamagotchiDeviceProps> = ({
                       {state.poopCount} Popó(s) 🦆
                     </span>
                   ) : (
-                    <span className="opacity-60">Peso: {state.weightGrams}g</span>
+                    <span className="opacity-75 font-mono">Peso: {state.weightGrams}g</span>
                   )}
                 </div>
               </>

@@ -9,6 +9,9 @@ interface EggPetRendererProps {
   lightsOn?: boolean;
   isSick?: boolean;
   poopCount?: number;
+  hungryHearts?: number;
+  happyHearts?: number;
+  disciplinePercent?: number;
   activeScreen?: ActiveScreen;
   foodType?: 'meal' | 'snack';
   gameStep?: 'idle' | 'guess' | 'reveal';
@@ -27,6 +30,9 @@ export const EggPetRenderer: React.FC<EggPetRendererProps> = ({
   lightsOn = true,
   isSick = false,
   poopCount = 0,
+  hungryHearts = 4,
+  happyHearts = 4,
+  disciplinePercent = 0,
   activeScreen = 'main',
   foodType = 'meal',
   petDirection = 'left',
@@ -394,10 +400,251 @@ export const EggPetRenderer: React.FC<EggPetRendererProps> = ({
     </g>
   );
 
+  // --- UNIFIED AUTHENTIC FACE EXPRESSION RENDERER ---
+  const renderPetFace = (lookX: number = 0) => {
+    const isEating = activeScreen === 'animating_eating';
+    const isDiscipline = activeScreen === 'animating_discipline';
+    const isHungry = (hungryHearts ?? 4) <= 1;
+    const isSad = (happyHearts ?? 4) <= 1 || isLowHealth;
+    const hasPoopDiscomfort = poopCount > 0;
+
+    // 1. SLEEPING FACE (Peaceful curves + floating Zzz)
+    if (isDarkSleep) {
+      return (
+        <g id="face-sleeping" transform={`translate(${lookX}, 0)`}>
+          <path d="M 76 96 Q 84 104 92 96" stroke={strokeColor} strokeWidth="3.5" strokeLinecap="round" fill="none" />
+          <path d="M 108 96 Q 116 104 124 96" stroke={strokeColor} strokeWidth="3.5" strokeLinecap="round" fill="none" />
+          <polygon points="94,106 106,106 100,113" fill={beakColor} stroke={strokeColor} strokeWidth="2" strokeLinejoin="round" />
+          <motion.text
+            x="128"
+            y="76"
+            fontSize="12"
+            fontWeight="bold"
+            fontFamily="monospace"
+            fill={isLcd ? '#2d5a37' : '#94a3b8'}
+            animate={{ y: [0, -6, 0], opacity: [0.4, 1, 0.4] }}
+            transition={{ duration: 2, repeat: Infinity, ease: 'easeInOut' }}
+          >
+            z
+          </motion.text>
+          <motion.text
+            x="140"
+            y="64"
+            fontSize="16"
+            fontWeight="bold"
+            fontFamily="monospace"
+            fill={isLcd ? '#2d5a37' : '#64748b'}
+            animate={{ y: [0, -8, 0], opacity: [0.3, 0.9, 0.3] }}
+            transition={{ duration: 2.4, repeat: Infinity, delay: 0.4, ease: 'easeInOut' }}
+          >
+            Z
+          </motion.text>
+        </g>
+      );
+    }
+
+    // 2. SICK FACE (Dizzy cross eyes, thermometer in beak, fever towel)
+    if (isSick) {
+      return (
+        <g id="face-sick" transform={`translate(${lookX}, 0)`}>
+          <line x1="74" y1="92" x2="88" y2="104" stroke={strokeColor} strokeWidth="3.5" strokeLinecap="round" />
+          <line x1="88" y1="92" x2="74" y2="104" stroke={strokeColor} strokeWidth="3.5" strokeLinecap="round" />
+          <line x1="112" y1="92" x2="126" y2="104" stroke={strokeColor} strokeWidth="3.5" strokeLinecap="round" />
+          <line x1="126" y1="92" x2="112" y2="104" stroke={strokeColor} strokeWidth="3.5" strokeLinecap="round" />
+
+          {!isLcd && (
+            <rect x="80" y="66" width="40" height="10" rx="4" fill="#67e8f9" stroke={strokeColor} strokeWidth="2" />
+          )}
+
+          <path d="M 90 115 Q 100 108 110 115" stroke={strokeColor} strokeWidth="3.5" strokeLinecap="round" fill="none" />
+          <polygon points="94,114 106,114 100,119" fill={beakColor} stroke={strokeColor} strokeWidth="1.5" />
+          
+          <g transform="translate(102, 110) rotate(-25)">
+            <rect x="0" y="0" width="22" height="5" rx="2" fill={isLcd ? '#73986a' : '#ffffff'} stroke={strokeColor} strokeWidth="1.5" />
+            <rect x="14" y="1" width="6" height="3" fill="#ef4444" />
+            <circle cx="21" cy="2.5" r="3.5" fill="#ef4444" stroke={strokeColor} strokeWidth="1.2" />
+          </g>
+        </g>
+      );
+    }
+
+    // 3. POOP DISCOMFORT FACE (Squinted disgusted side-eyes, wavy mouth, sweat drop)
+    if (hasPoopDiscomfort) {
+      return (
+        <g id="face-poop-discomfort" transform={`translate(${lookX}, 0)`}>
+          <path d="M 74 94 L 88 100" stroke={strokeColor} strokeWidth="3.5" strokeLinecap="round" />
+          <circle cx="86" cy="100" r="4.5" fill={darkDetail} />
+          
+          <path d="M 112 100 L 126 94" stroke={strokeColor} strokeWidth="3.5" strokeLinecap="round" />
+          <circle cx="122" cy="100" r="4.5" fill={darkDetail} />
+
+          {!isLcd && (
+            <motion.path
+              d="M 132 80 C 132 76 138 72 138 72 C 138 72 144 76 144 80 C 144 84 141 86 138 86 C 135 86 132 84 132 80 Z"
+              fill="#38bdf8"
+              stroke={strokeColor}
+              strokeWidth="1.5"
+              animate={{ y: [0, 3, 0] }}
+              transition={{ duration: 1.2, repeat: Infinity }}
+            />
+          )}
+
+          <path
+            d="M 88 114 Q 94 108 100 114 Q 106 120 112 114"
+            stroke={strokeColor}
+            strokeWidth="3.5"
+            strokeLinecap="round"
+            fill="none"
+          />
+          <polygon points="96,112 104,112 100,117" fill={beakColor} />
+        </g>
+      );
+    }
+
+    // 4. HUNGRY FACE (Wide open begging beak, teary pleading eyes, tummy rumble)
+    if (isHungry) {
+      return (
+        <g id="face-hungry" transform={`translate(${lookX}, 0)`}>
+          <circle cx="82" cy="96" r="8.5" fill={darkDetail} />
+          <circle cx="118" cy="96" r="8.5" fill={darkDetail} />
+          {!isLcd && (
+            <>
+              <circle cx="80" cy="93" r="3.5" fill="#ffffff" />
+              <circle cx="84" cy="98" r="1.5" fill="#ffffff" />
+              <circle cx="116" cy="93" r="3.5" fill="#ffffff" />
+              <circle cx="120" cy="98" r="1.5" fill="#ffffff" />
+              <ellipse cx="66" cy="92" rx="2.5" ry="4" fill="#38bdf8" />
+            </>
+          )}
+
+          <ellipse
+            cx="100"
+            cy="114"
+            rx="12"
+            ry="10"
+            fill={beakColor}
+            stroke={strokeColor}
+            strokeWidth="3"
+          />
+          <ellipse cx="100" cy="114" rx="8" ry="6" fill={beakInside} />
+          <circle cx="100" cy="116" r="3" fill="#f43f5e" />
+
+          {!isLcd && (
+            <motion.path
+              d="M 90 142 Q 100 136 110 142"
+              stroke={strokeColor}
+              strokeWidth="2"
+              strokeLinecap="round"
+              fill="none"
+              animate={{ opacity: [0.3, 0.9, 0.3] }}
+              transition={{ duration: 1, repeat: Infinity }}
+            />
+          )}
+        </g>
+      );
+    }
+
+    // 5. EATING ANIMATION FACE
+    if (isEating) {
+      return (
+        <g id="face-eating" transform={`translate(${lookX}, 0)`}>
+          <path d="M 76 96 Q 84 88 92 96" stroke={strokeColor} strokeWidth="3.5" strokeLinecap="round" fill="none" />
+          <path d="M 108 96 Q 116 88 124 96" stroke={strokeColor} strokeWidth="3.5" strokeLinecap="round" fill="none" />
+          {!isLcd && (
+            <>
+              <ellipse cx="68" cy="106" rx="8" ry="6" fill={blushColor} opacity={0.8} />
+              <ellipse cx="132" cy="106" rx="8" ry="6" fill={blushColor} opacity={0.8} />
+            </>
+          )}
+          <motion.ellipse
+            cx="100"
+            cy="110"
+            rx="11"
+            ry="8"
+            fill={beakColor}
+            stroke={strokeColor}
+            strokeWidth="2.5"
+            animate={{ scaleY: [0.6, 1.2, 0.6] }}
+            transition={{ duration: 0.25, repeat: Infinity }}
+          />
+          <circle cx="100" cy="110" r="4" fill={beakInside} />
+        </g>
+      );
+    }
+
+    // 6. DISCIPLINED / SCOLDED ANIMATION FACE
+    if (isDiscipline) {
+      return (
+        <g id="face-disciplined" transform={`translate(${lookX}, 0)`}>
+          <circle cx="82" cy="98" r="6" fill={darkDetail} />
+          <circle cx="118" cy="98" r="6" fill={darkDetail} />
+          <circle cx="80" cy="96" r="2" fill="#ffffff" />
+          <circle cx="116" cy="96" r="2" fill="#ffffff" />
+          <line x1="92" y1="112" x2="108" y2="112" stroke={strokeColor} strokeWidth="3" strokeLinecap="round" />
+          <polygon points="96,111 104,111 100,116" fill={beakColor} />
+        </g>
+      );
+    }
+
+    // 7. SAD / LOW HAPPINESS / LOW HEALTH FACE
+    if (isSad) {
+      return (
+        <g id="face-sad" transform={`translate(${lookX}, 0)`}>
+          <path d="M 74 92 L 90 98" stroke={strokeColor} strokeWidth="3.5" strokeLinecap="round" />
+          <circle cx="82" cy="101" r="5.5" fill={darkDetail} />
+          <path d="M 126 92 L 110 98" stroke={strokeColor} strokeWidth="3.5" strokeLinecap="round" />
+          <circle cx="118" cy="101" r="5.5" fill={darkDetail} />
+
+          {!isLcd && (
+            <ellipse cx="73" cy="108" rx="2.5" ry="4" fill="#38bdf8" />
+          )}
+
+          <path
+            d="M 90 116 Q 100 108 110 116"
+            stroke={strokeColor}
+            strokeWidth="3.5"
+            strokeLinecap="round"
+            fill="none"
+          />
+          <polygon points="95,114 105,114 100,118" fill={beakColor} />
+        </g>
+      );
+    }
+
+    // 8. DEFAULT: HAPPY & HEALTHY FACE
+    return (
+      <g id="face-happy-radiant" transform={`translate(${lookX}, 0)`}>
+        <circle cx="82" cy="98" r="8" fill={darkDetail} />
+        <circle cx="118" cy="98" r="8" fill={darkDetail} />
+        {!isLcd && (
+          <>
+            <circle cx="79.5" cy="95" r="3" fill="#ffffff" />
+            <circle cx="83.5" cy="100" r="1.2" fill="#ffffff" />
+            <circle cx="115.5" cy="95" r="3" fill="#ffffff" />
+            <circle cx="119.5" cy="100" r="1.2" fill="#ffffff" />
+            <ellipse cx="68" cy="108" rx="8" ry="6" fill={blushColor} opacity={0.75} />
+            <ellipse cx="132" cy="108" rx="8" ry="6" fill={blushColor} opacity={0.75} />
+          </>
+        )}
+        <g id="chick-beak">
+          <path
+            d="M 88 102 Q 100 96 112 102 L 100 118 Z"
+            fill={beakColor}
+            stroke={strokeColor}
+            strokeWidth="2.5"
+            strokeLinejoin="round"
+          />
+          <path d="M 92 105 Q 100 102 108 105 L 100 114 Z" fill={beakInside} />
+        </g>
+      </g>
+    );
+  };
+
   // --- STAGE 5: BABY CHICK IN EGGSHELL (EXACT MATCH TO REFERENCE IMAGE!) ---
   const renderBabyChick = () => {
     const isEating = activeScreen === 'animating_eating';
     const isPlaying = activeScreen === 'game';
+    const lookX = isPlaying ? (petDirection === 'left' ? -6 : 6) : 0;
 
     // If sleeping or lights are off, completely freeze movement
     const bodyAnimation = isDarkSleep
@@ -476,74 +723,7 @@ export const EggPetRenderer: React.FC<EggPetRendererProps> = ({
           )}
 
           {/* 2. CHICK FACE EXPRESSION */}
-          {isDarkSleep ? (
-            /* Sleeping Face */
-            <g id="chick-sleeping-face">
-              <path d="M 76 98 Q 84 105 92 98" stroke={strokeColor} strokeWidth="3.5" strokeLinecap="round" fill="none" />
-              <path d="M 108 98 Q 116 105 124 98" stroke={strokeColor} strokeWidth="3.5" strokeLinecap="round" fill="none" />
-              {/* Soft Closed Peaceful Beak */}
-              <polygon points="94,106 106,106 100,114" fill={beakColor} stroke={strokeColor} strokeWidth="2" />
-            </g>
-          ) : isSick ? (
-            /* Sickness Sick Face with cross eyes */
-            <g id="chick-sick-face">
-              <line x1="74" y1="92" x2="88" y2="104" stroke={strokeColor} strokeWidth="3.5" strokeLinecap="round" />
-              <line x1="88" y1="92" x2="74" y2="104" stroke={strokeColor} strokeWidth="3.5" strokeLinecap="round" />
-              <line x1="112" y1="92" x2="126" y2="104" stroke={strokeColor} strokeWidth="3.5" strokeLinecap="round" />
-              <line x1="126" y1="92" x2="112" y2="104" stroke={strokeColor} strokeWidth="3.5" strokeLinecap="round" />
-              {/* Sad Beak Frown */}
-              <path d="M 88 116 Q 100 106 112 116" stroke={strokeColor} strokeWidth="3.5" strokeLinecap="round" fill="none" />
-            </g>
-          ) : isLowHealth ? (
-            /* Sad Face when health drops gradually */
-            <g id="chick-sad-face">
-              {/* Sad Slanted Eyes / Drooping Eyebrows */}
-              <path d="M 74 92 L 90 98" stroke={strokeColor} strokeWidth="3.5" strokeLinecap="round" />
-              <circle cx="82" cy="101" r="5" fill={darkDetail} />
-              <path d="M 126 92 L 110 98" stroke={strokeColor} strokeWidth="3.5" strokeLinecap="round" />
-              <circle cx="118" cy="101" r="5" fill={darkDetail} />
-
-              {/* Tear Drops if health is critical */}
-              {isCriticalHealth && !isLcd && (
-                <ellipse cx="73" cy="108" rx="2.5" ry="4" fill="#38bdf8" />
-              )}
-
-              {/* Sad Beak Frown */}
-              <path
-                d="M 90 116 Q 100 108 110 116"
-                stroke={strokeColor}
-                strokeWidth="3.5"
-                strokeLinecap="round"
-                fill="none"
-              />
-              <polygon points="95,114 105,114 100,118" fill={beakColor} />
-            </g>
-          ) : (
-            /* Happy Glossy Face */
-            <g id="chick-cute-face">
-              <circle cx="82" cy="98" r="8" fill={darkDetail} />
-              <circle cx="118" cy="98" r="8" fill={darkDetail} />
-              {!isLcd && (
-                <>
-                  <circle cx="79.5" cy="95" r="3" fill="#ffffff" />
-                  <circle cx="115.5" cy="95" r="3" fill="#ffffff" />
-                  <ellipse cx="68" cy="108" rx="8" ry="6" fill={blushColor} opacity={0.75} />
-                  <ellipse cx="132" cy="108" rx="8" ry="6" fill={blushColor} opacity={0.75} />
-                </>
-              )}
-              {/* Cute Smiling Open Beak */}
-              <g id="chick-beak">
-                <path
-                  d="M 88 102 Q 100 96 112 102 L 100 118 Z"
-                  fill={beakColor}
-                  stroke={strokeColor}
-                  strokeWidth="2.5"
-                  strokeLinejoin="round"
-                />
-                <path d="M 92 105 Q 100 102 108 105 L 100 114 Z" fill={beakInside} />
-              </g>
-            </g>
-          )}
+          {renderPetFace(lookX)}
         </g>
 
         {/* 3. CRACKED BOTTOM EGGSHELL */}
@@ -660,64 +840,7 @@ export const EggPetRenderer: React.FC<EggPetRendererProps> = ({
         )}
 
         {/* Face Elements */}
-        {isDarkSleep ? (
-          <g>
-            <path d="M 76 96 Q 84 104 92 96" stroke={strokeColor} strokeWidth="3.5" strokeLinecap="round" fill="none" />
-            <path d="M 108 96 Q 116 104 124 96" stroke={strokeColor} strokeWidth="3.5" strokeLinecap="round" fill="none" />
-            <polygon points="94,106 106,106 100,114" fill={beakColor} stroke={strokeColor} strokeWidth="2" />
-          </g>
-        ) : isSick ? (
-          <g>
-            <line x1="74" y1="92" x2="88" y2="104" stroke={strokeColor} strokeWidth="3.5" strokeLinecap="round" />
-            <line x1="88" y1="92" x2="74" y2="104" stroke={strokeColor} strokeWidth="3.5" strokeLinecap="round" />
-            <line x1="112" y1="92" x2="126" y2="104" stroke={strokeColor} strokeWidth="3.5" strokeLinecap="round" />
-            <line x1="126" y1="92" x2="112" y2="104" stroke={strokeColor} strokeWidth="3.5" strokeLinecap="round" />
-            <path d="M 88 116 Q 100 106 112 116" stroke={strokeColor} strokeWidth="3.5" strokeLinecap="round" fill="none" />
-          </g>
-        ) : isLowHealth ? (
-          <g id="adult-sad-face">
-            <path d="M 74 92 L 90 98" stroke={strokeColor} strokeWidth="3.5" strokeLinecap="round" />
-            <circle cx="82" cy="101" r="5.5" fill={darkDetail} />
-            <path d="M 126 92 L 110 98" stroke={strokeColor} strokeWidth="3.5" strokeLinecap="round" />
-            <circle cx="118" cy="101" r="5.5" fill={darkDetail} />
-
-            {isCriticalHealth && !isLcd && (
-              <ellipse cx="73" cy="108" rx="2.5" ry="4" fill="#38bdf8" />
-            )}
-
-            <path
-              d="M 90 116 Q 100 108 110 116"
-              stroke={strokeColor}
-              strokeWidth="3.5"
-              strokeLinecap="round"
-              fill="none"
-            />
-            <polygon points="95,114 105,114 100,118" fill={beakColor} />
-          </g>
-        ) : (
-          <g transform={`translate(${lookX}, 0)`}>
-            <circle cx="82" cy="98" r="8" fill={darkDetail} />
-            <circle cx="118" cy="98" r="8" fill={darkDetail} />
-            {!isLcd && (
-              <>
-                <circle cx="79.5" cy="95" r="3" fill="#ffffff" />
-                <circle cx="115.5" cy="95" r="3" fill="#ffffff" />
-                <ellipse cx="68" cy="108" rx="8" ry="6" fill={blushColor} opacity={0.75} />
-                <ellipse cx="132" cy="108" rx="8" ry="6" fill={blushColor} opacity={0.75} />
-              </>
-            )}
-            <g id="adult-beak">
-              <path
-                d="M 88 102 Q 100 96 112 102 L 100 118 Z"
-                fill={beakColor}
-                stroke={strokeColor}
-                strokeWidth="2.5"
-                strokeLinejoin="round"
-              />
-              <path d="M 92 105 Q 100 102 108 105 L 100 114 Z" fill={beakInside} />
-            </g>
-          </g>
-        )}
+        {renderPetFace(lookX)}
       </motion.g>
     );
   };
@@ -873,9 +996,9 @@ export const EggPetRenderer: React.FC<EggPetRendererProps> = ({
         {/* Soft Warm Ground Shadow matching reference image */}
         <ellipse
           cx="100"
-          cy="186"
-          rx="52"
-          ry="10"
+          cy={stage < EvolutionStage.BABY_CHICK ? '172' : '186'}
+          rx={stage < EvolutionStage.BABY_CHICK ? '42' : '52'}
+          ry={stage < EvolutionStage.BABY_CHICK ? '8' : '10'}
           fill={isLcd ? '#73986a' : isPixel ? '#44403c' : '#f3e8de'}
           opacity={isLcd ? 0.35 : 0.9}
         />
@@ -885,10 +1008,26 @@ export const EggPetRenderer: React.FC<EggPetRendererProps> = ({
           renderDeadScreen()
         ) : (
           <>
-            {stage === EvolutionStage.EGG_INCUBATING && renderEggIncubating()}
-            {stage === EvolutionStage.EGG_WIGGLING && renderEggWiggling()}
-            {stage === EvolutionStage.EGG_CRACKING && renderEggCracking()}
-            {stage === EvolutionStage.EGG_HATCHING && renderEggHatching()}
+            {stage === EvolutionStage.EGG_INCUBATING && (
+              <g transform="translate(100, 115) scale(0.8) translate(-100, -115)">
+                {renderEggIncubating()}
+              </g>
+            )}
+            {stage === EvolutionStage.EGG_WIGGLING && (
+              <g transform="translate(100, 115) scale(0.8) translate(-100, -115)">
+                {renderEggWiggling()}
+              </g>
+            )}
+            {stage === EvolutionStage.EGG_CRACKING && (
+              <g transform="translate(100, 115) scale(0.8) translate(-100, -115)">
+                {renderEggCracking()}
+              </g>
+            )}
+            {stage === EvolutionStage.EGG_HATCHING && (
+              <g transform="translate(100, 115) scale(0.8) translate(-100, -115)">
+                {renderEggHatching()}
+              </g>
+            )}
             {stage === EvolutionStage.BABY_CHICK && renderBabyChick()}
             {stage === EvolutionStage.ADULT_CHICK && renderAdultChick()}
           </>
