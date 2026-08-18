@@ -12,6 +12,7 @@ export type PetMood = 'happy' | 'excited' | 'eating' | 'playing' | 'sick' | 'sle
 
 export type ChickEmotion =
   | 'happy'       // 🌟 Alegre / Radiante
+  | 'excited'     // ⚡ Emocionado / Eclosionando
   | 'loving'      // 💖 Mimado / Acariciado
   | 'sleepy'      // 💤 Somnoliento
   | 'hungry'      // 🍙 Hambriento
@@ -60,6 +61,35 @@ export interface ZumbaSessionState {
   totalCaloriesBurned: number;
 }
 
+export type DayNightTimeOfDay = 'dawn' | 'day' | 'sunset' | 'night';
+
+export interface OwnerHabitsState {
+  waterGlassesToday: number; // 0 to 8 glasses (250ml each = 2L target)
+  lastWaterDate: string; // YYYY-MM-DD
+  totalWaterLogged: number;
+  
+  pillsTakenToday: boolean;
+  lastPillDate: string; // YYYY-MM-DD
+  totalPillDays: number;
+  
+  sleepRoutineDoneToday: boolean;
+  lastSleepRoutineDate: string; // YYYY-MM-DD
+  totalSleepRoutines: number;
+}
+
+export interface Achievement {
+  id: string;
+  title: string;
+  description: string;
+  icon: string;
+  category: 'health' | 'survival' | 'zumba' | 'care';
+  target: number;
+  current: number;
+  unlocked: boolean;
+  unlockedDate?: string;
+  rewardDescription: string;
+}
+
 export interface TamagotchiState {
   stage: EvolutionStage;
   name: string;
@@ -79,9 +109,10 @@ export interface TamagotchiState {
   isSick: boolean;
   sickDosesNeeded: number; // 1 or 2
   
-  // Sleep & Lights
+  // Sleep & Lights (Can sleep and wake up anytime user desires)
   isSleeping: boolean;
   lightsOn: boolean;
+  sleepStartSeconds?: number;
   
   // Attention Call (Bottom-right alert icon)
   needsAttention: boolean;
@@ -104,11 +135,25 @@ export interface TamagotchiState {
   
   // Fitness / Zumba Link
   zumbaData: ZumbaSessionState;
+  zumbaTimerRemainingSeconds?: number; // 20-min countdown timer (1200 seconds max)
+  zumbaCompletedDate?: string; // YYYY-MM-DD date string when 20-min Zumba reward was earned for the day
   
   // Daily Quests
   quests: DailyQuest[];
   lastQuestResetDate: string; // YYYY-MM-DD
   lastSavedTimestamp?: number; // Timestamp of last save for offline health decay calculation
+  
+  // Owner Wellness Habits (Health synergy)
+  ownerHabits: OwnerHabitsState;
+  
+  // Achievements System
+  achievements: Achievement[];
+  
+  // Stats Counters for Achievements
+  minigamesWonCount?: number;
+  poopCleanedCount?: number;
+  petsGivenCount?: number;
+  lowestHealthRecorded?: number;
   
   // Emotions & Interactive Speech Bubbles
   currentEmotion?: ChickEmotion;
