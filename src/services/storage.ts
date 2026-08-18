@@ -4,7 +4,10 @@ import {
   StageConfig,
   GraveyardRecord,
   DailyQuest,
-  ZumbaSessionState
+  ZumbaSessionState,
+  Achievement,
+  OwnerHabitsState,
+  DayNightTimeOfDay
 } from '../types/tamagotchi';
 
 export const SECONDS_PER_DAY = 86400; // 24 hours
@@ -91,14 +94,14 @@ export function generateDailyQuests(): DailyQuest[] {
   return [
     {
       id: 'quest-zumba',
-      title: 'Bailar 15 min de Zumba',
-      description: 'Haz tu sesión de Zumba diaria para darle energía vital e impulso de crecimiento a tu mascota.',
+      title: 'Bailar 20 min de Zumba',
+      description: 'Haz tu sesión de Zumba diaria (1 al día) con el temporizador de 20 minutos para otorgarle +1 Día (+24h) de crecimiento y +35% de salud a tu mascota.',
       icon: '💃',
       category: 'zumba',
-      target: 15,
+      target: 20,
       current: 0,
       unit: 'min',
-      rewardText: '+2h Crecimiento y +1 Corazón de Felicidad',
+      rewardText: '+1 Día (+24h) Crecimiento y +35% Salud Vital',
       completed: false,
       claimed: false
     },
@@ -157,6 +160,132 @@ export function generateDailyQuests(): DailyQuest[] {
   ];
 }
 
+export function getDayNightTimeOfDay(date = new Date()): DayNightTimeOfDay {
+  const hour = date.getHours();
+  if (hour >= 6 && hour < 9) return 'dawn';
+  if (hour >= 9 && hour < 19) return 'day';
+  if (hour >= 19 && hour < 22) return 'sunset';
+  return 'night';
+}
+
+export function getInitialOwnerHabits(): OwnerHabitsState {
+  return {
+    waterGlassesToday: 0,
+    lastWaterDate: getTodayDateString(),
+    totalWaterLogged: 0,
+    pillsTakenToday: false,
+    lastPillDate: '',
+    totalPillDays: 0,
+    sleepRoutineDoneToday: false,
+    lastSleepRoutineDate: '',
+    totalSleepRoutines: 0
+  };
+}
+
+export function generateInitialAchievements(): Achievement[] {
+  return [
+    {
+      id: 'veteran_7_days',
+      title: 'Veterano del Nido',
+      description: 'Sobrevive los 7 días completos y alcanza la etapa de Pollo Adulto con más del 80% de salud vital.',
+      icon: '👑',
+      category: 'survival',
+      target: 7,
+      current: 0,
+      unlocked: false,
+      rewardDescription: 'Corona dorada del nido y título de Gran Cuidador'
+    },
+    {
+      id: 'rhythm_king',
+      title: 'Rey del Ritmo',
+      description: 'Completa 3 sesiones diarias de Zumba Fitness junto a tu mascota.',
+      icon: '💃',
+      category: 'zumba',
+      target: 3,
+      current: 0,
+      unlocked: false,
+      rewardDescription: '+50% de Energía y Aura de Baile'
+    },
+    {
+      id: 'brink_of_abyss',
+      title: 'Al Borde del Abismo',
+      description: 'Salva a tu mascota cuando su salud baje a menos del 20% y recupérala de vuelta al 100%.',
+      icon: '🧯',
+      category: 'survival',
+      target: 1,
+      current: 0,
+      unlocked: false,
+      rewardDescription: 'Medalla de Rescate Milagroso'
+    },
+    {
+      id: 'hydration_master',
+      title: 'Maestro de la Hidratación',
+      description: 'Toma tus 8 vasos de agua en un día para refrescar el nido y purificar a tu pollito.',
+      icon: '💧',
+      category: 'health',
+      target: 8,
+      current: 0,
+      unlocked: false,
+      rewardDescription: 'Gota de Cristal y Protección Hidratante'
+    },
+    {
+      id: 'medication_champion',
+      title: 'Compromiso Salud',
+      description: 'Toma tus medicamentos o vitaminas a tiempo durante 3 días.',
+      icon: '💊',
+      category: 'health',
+      target: 3,
+      current: 0,
+      unlocked: false,
+      rewardDescription: 'Escudo Inmunológico Fortalecido'
+    },
+    {
+      id: 'restful_sleep',
+      title: 'Sueño Reparador',
+      description: 'Realiza tu rutina de descanso e higiene de sueño junto a tu mascota.',
+      icon: '🌙',
+      category: 'health',
+      target: 1,
+      current: 0,
+      unlocked: false,
+      rewardDescription: 'Aura de Estrellas y Sueño Profundo'
+    },
+    {
+      id: 'minigame_master',
+      title: 'Campeón de Minijuegos',
+      description: 'Gana 5 minijuegos con victoria para acelerar el desarrollo de tu mascota.',
+      icon: '🎮',
+      category: 'care',
+      target: 5,
+      current: 0,
+      unlocked: false,
+      rewardDescription: 'Trofeo Gamer Retro'
+    },
+    {
+      id: 'spotless_home',
+      title: 'Hogar Impecable',
+      description: 'Limpia 10 popós acumuladas sin dejar que tu mascota enferme.',
+      icon: '🧼',
+      category: 'care',
+      target: 10,
+      current: 0,
+      unlocked: false,
+      rewardDescription: 'Inmunidad Antiséptica'
+    },
+    {
+      id: 'loving_caregiver',
+      title: 'Corazón Afectuoso',
+      description: 'Hazle 25 caricias y mimos a tu Tamagotchi.',
+      icon: '💖',
+      category: 'care',
+      target: 25,
+      current: 0,
+      unlocked: false,
+      rewardDescription: 'Vínculo de Amor Inquebrantable'
+    }
+  ];
+}
+
 const INITIAL_ZUMBA_STATE: ZumbaSessionState = {
   dailyTargetMinutes: 15,
   todayMinutesCompleted: 0,
@@ -192,7 +321,13 @@ export const INITIAL_TAMAGOTCHI_STATE: TamagotchiState = {
   snacksEaten: 0,
   zumbaData: INITIAL_ZUMBA_STATE,
   quests: generateDailyQuests(),
-  lastQuestResetDate: getTodayDateString()
+  lastQuestResetDate: getTodayDateString(),
+  ownerHabits: getInitialOwnerHabits(),
+  achievements: generateInitialAchievements(),
+  minigamesWonCount: 0,
+  poopCleanedCount: 0,
+  petsGivenCount: 0,
+  lowestHealthRecorded: 100
 };
 
 const STORAGE_KEYS = {
@@ -385,6 +520,32 @@ export function loadSavedState(): TamagotchiState {
         }
       }
 
+      if (!state.ownerHabits) {
+        state.ownerHabits = getInitialOwnerHabits();
+      } else {
+        // Reset daily counters if date changed
+        const todayStr = getTodayDateString();
+        if (state.ownerHabits.lastWaterDate !== todayStr) {
+          state.ownerHabits.waterGlassesToday = 0;
+          state.ownerHabits.lastWaterDate = todayStr;
+        }
+        if (state.ownerHabits.lastPillDate !== todayStr) {
+          state.ownerHabits.pillsTakenToday = false;
+        }
+        if (state.ownerHabits.lastSleepRoutineDate !== todayStr) {
+          state.ownerHabits.sleepRoutineDoneToday = false;
+        }
+      }
+
+      if (!state.achievements || state.achievements.length === 0) {
+        state.achievements = generateInitialAchievements();
+      }
+
+      if (state.minigamesWonCount === undefined) state.minigamesWonCount = 0;
+      if (state.poopCleanedCount === undefined) state.poopCleanedCount = 0;
+      if (state.petsGivenCount === undefined) state.petsGivenCount = 0;
+      if (state.lowestHealthRecorded === undefined) state.lowestHealthRecorded = state.healthPercent || 100;
+
       state.lastSavedTimestamp = Date.now();
       return state;
     }
@@ -448,7 +609,7 @@ export function placeFlowersOnGrave(graveId: string): GraveyardRecord[] {
   return updated;
 }
 
-export function resetToNewEgg(customName = 'Piolín', nextGeneration = 1): TamagotchiState {
+export function resetToNewEgg(customName = 'Piolín', nextGeneration = 1, preservedAchievements?: Achievement[]): TamagotchiState {
   const today = getTodayDateString();
   const newState: TamagotchiState = {
     ...INITIAL_TAMAGOTCHI_STATE,
@@ -472,7 +633,13 @@ export function resetToNewEgg(customName = 'Piolín', nextGeneration = 1): Tamag
     needsAttention: false,
     attentionReason: null,
     quests: generateDailyQuests(),
-    lastQuestResetDate: today
+    lastQuestResetDate: today,
+    ownerHabits: getInitialOwnerHabits(),
+    achievements: preservedAchievements || generateInitialAchievements(),
+    minigamesWonCount: 0,
+    poopCleanedCount: 0,
+    petsGivenCount: 0,
+    lowestHealthRecorded: 100
   };
   saveState(newState);
   return newState;

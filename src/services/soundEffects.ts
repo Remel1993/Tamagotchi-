@@ -63,6 +63,15 @@ class TamagotchiAudio {
     setTimeout(() => this.playBeep(1318, 0.045, 'square'), 35);
   }
 
+  // Retro Game Startup Chime
+  public playStartGame() {
+    if (!this.soundEnabled) return;
+    const notes = [523.25, 659.25, 783.99, 1046.5];
+    notes.forEach((freq, i) => {
+      setTimeout(() => this.playBeep(freq, 0.06, 'square'), i * 65);
+    });
+  }
+
   // Cancel / Back beep (C button)
   public playCancel() {
     if (!this.soundEnabled) return;
@@ -199,6 +208,15 @@ class TamagotchiAudio {
     this.playBeep(1800, 0.06, 'square');
     setTimeout(() => this.playBeep(1400, 0.06, 'square'), 70);
     setTimeout(() => this.playBeep(1800, 0.06, 'square'), 140);
+  }
+
+  // Pitido claro al terminar la Zumba (Clean 8-bit Tamagotchi finish beep)
+  public playZumbaFinishBeep() {
+    if (!this.soundEnabled) return;
+    this.playBeep(1046.5, 0.08, 'square');
+    setTimeout(() => this.playBeep(1318.5, 0.08, 'square'), 90);
+    setTimeout(() => this.playBeep(1567.98, 0.11, 'square'), 180);
+    setTimeout(() => this.playBeep(2093.0, 0.16, 'square'), 300);
   }
 
   // Mini-Game Win Round
