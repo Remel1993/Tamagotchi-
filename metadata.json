@@ -1,0 +1,6 @@
+{
+  "name": "Tamagotchi Virtual Pet",
+  "description": "Simulación completa de Tamagotchi con ciclo de 7 días de huevo a pollo, cementerio conmemorativo, retos diarios del cuidador, botón de nueva mascota y dinámica de entrenamiento de Zumba Fitness con música rítmica.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
