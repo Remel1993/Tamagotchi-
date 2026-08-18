@@ -1,6 +1,7 @@
 import {
   EvolutionStage,
   TamagotchiState,
+  PetSpecies,
   StageConfig,
   GraveyardRecord,
   DailyQuest,
@@ -84,6 +85,84 @@ export const STAGES_CONFIG: Record<EvolutionStage, StageConfig> = {
     endSecond: 0
   }
 };
+
+export const DOG_STAGES_CONFIG: Record<EvolutionStage, StageConfig> = {
+  [EvolutionStage.EGG_INCUBATING]: {
+    stage: EvolutionStage.EGG_INCUBATING,
+    dayNumber: 1,
+    dayRangeLabel: 'Día 1 (0h - 24h)',
+    name: '1. Cachorrito Tierno',
+    subtitle: 'Cachorrito activo y alegre recién adoptado',
+    description: 'Día 1 del ciclo canino. ¡Tu cachorro ya está listo para comer croquetas, beber agua, jugar y recibir cariño desde el primer día!',
+    startSecond: 0,
+    endSecond: SECONDS_PER_DAY * 1
+  },
+  [EvolutionStage.EGG_WIGGLING]: {
+    stage: EvolutionStage.EGG_WIGGLING,
+    dayNumber: 2,
+    dayRangeLabel: 'Día 2 (24h - 48h)',
+    name: '2. Cachorro Juguetón',
+    subtitle: 'Mueve la colita alegremente y da saltitos',
+    description: 'Día 2 del ciclo. ¡Tu cachorro se llena de energía! Corretea, mueve su colita y pide mimos.',
+    startSecond: SECONDS_PER_DAY * 1,
+    endSecond: SECONDS_PER_DAY * 2
+  },
+  [EvolutionStage.EGG_CRACKING]: {
+    stage: EvolutionStage.EGG_CRACKING,
+    dayNumber: 3,
+    dayRangeLabel: 'Día 3 (48h - 72h)',
+    name: '3. Perrito Curioso',
+    subtitle: 'Explora su entorno con ojitos atentos',
+    description: 'Día 3 del ciclo. Aprende rápido, juega a adivinar la dirección y te recibe con ladridos de júbilo.',
+    startSecond: SECONDS_PER_DAY * 2,
+    endSecond: SECONDS_PER_DAY * 3
+  },
+  [EvolutionStage.EGG_HATCHING]: {
+    stage: EvolutionStage.EGG_HATCHING,
+    dayNumber: 4,
+    dayRangeLabel: 'Día 4 (72h - 96h)',
+    name: '4. Perrito Aventurero',
+    subtitle: 'Lleno de vitalidad, energía y afecto',
+    description: 'Día 4 del ciclo. Gran agilidad, reflejos despiertos y una fidelidad inquebrantable.',
+    startSecond: SECONDS_PER_DAY * 3,
+    endSecond: SECONDS_PER_DAY * 4
+  },
+  [EvolutionStage.BABY_CHICK]: {
+    stage: EvolutionStage.BABY_CHICK,
+    dayNumber: 5,
+    dayRangeLabel: 'Días 5 y 6 (96h - 144h)',
+    name: '5. Perrito Joven',
+    subtitle: 'Cachorro juvenil con collar y gran destreza',
+    description: 'Días 5 y 6 del ciclo. Listo para las sesiones de Zumba fitness, mantener su higiene y desarrollar su fuerza.',
+    startSecond: SECONDS_PER_DAY * 4,
+    endSecond: SECONDS_PER_DAY * 6
+  },
+  [EvolutionStage.ADULT_CHICK]: {
+    stage: EvolutionStage.ADULT_CHICK,
+    dayNumber: 7,
+    dayRangeLabel: 'Día 7+ (144h en adelante)',
+    name: '6. Perro Adulto Campeón',
+    subtitle: 'Perro atlético de medalla de oro y compañero leal',
+    description: 'Día 7 en adelante. ¡Completó su crecimiento como todo un campeón fitness! Mantén sus corazones llenos y su rutina activa.',
+    startSecond: SECONDS_PER_DAY * 6,
+    endSecond: Infinity
+  },
+  [EvolutionStage.DEAD]: {
+    stage: EvolutionStage.DEAD,
+    dayNumber: 0,
+    dayRangeLabel: 'Q.E.P.D.',
+    name: '7. Descanso Celestial (Memorial)',
+    subtitle: 'Tu fiel compañero canino descansa en paz',
+    description: 'Tu mascota ha partido al paraíso de los perritos. Puedes honrar su memoria en el Cementerio e iniciar una nueva generación.',
+    startSecond: 0,
+    endSecond: 0
+  }
+};
+
+export function getStageConfig(stage: EvolutionStage, species?: PetSpecies): StageConfig {
+  const dictionary = species === 'dog' ? DOG_STAGES_CONFIG : STAGES_CONFIG;
+  return dictionary[stage] || dictionary[EvolutionStage.BABY_CHICK];
+}
 
 export function getTodayDateString(): string {
   const now = new Date();
@@ -186,18 +265,18 @@ export function generateInitialAchievements(): Achievement[] {
   return [
     {
       id: 'veteran_7_days',
-      title: 'Veterano del Nido',
+      title: 'Maestro de los 7 Días',
       description: 'Sobrevive los 7 días completos y alcanza la etapa de Pollo Adulto con más del 80% de salud vital.',
       icon: '👑',
       category: 'survival',
       target: 7,
       current: 0,
       unlocked: false,
-      rewardDescription: 'Corona dorada del nido y título de Gran Cuidador'
+      rewardDescription: 'Corona Dorada y Título de Gran Cuidador'
     },
     {
       id: 'rhythm_king',
-      title: 'Rey del Ritmo',
+      title: 'Rey del Ritmo Zumba',
       description: 'Completa 3 sesiones diarias de Zumba Fitness junto a tu mascota.',
       icon: '💃',
       category: 'zumba',
@@ -208,19 +287,19 @@ export function generateInitialAchievements(): Achievement[] {
     },
     {
       id: 'brink_of_abyss',
-      title: 'Al Borde del Abismo',
+      title: 'Rescate Milagroso',
       description: 'Salva a tu mascota cuando su salud baje a menos del 20% y recupérala de vuelta al 100%.',
       icon: '🧯',
       category: 'survival',
       target: 1,
       current: 0,
       unlocked: false,
-      rewardDescription: 'Medalla de Rescate Milagroso'
+      rewardDescription: 'Medalla de Rescate Legendario'
     },
     {
       id: 'hydration_master',
       title: 'Maestro de la Hidratación',
-      description: 'Toma tus 8 vasos de agua en un día para refrescar el nido y purificar a tu pollito.',
+      description: 'Toma tus 8 vasos de agua en un día para revitalizar a tu pollito y purificar su organismo.',
       icon: '💧',
       category: 'health',
       target: 8,
@@ -230,8 +309,8 @@ export function generateInitialAchievements(): Achievement[] {
     },
     {
       id: 'medication_champion',
-      title: 'Compromiso Salud',
-      description: 'Toma tus medicamentos o vitaminas a tiempo durante 3 días.',
+      title: 'Compromiso de Salud (Pastillas)',
+      description: 'Toma tus medicamentos o vitaminas a tiempo durante 3 días para activar el escudo inmunológico.',
       icon: '💊',
       category: 'health',
       target: 3,
@@ -241,8 +320,8 @@ export function generateInitialAchievements(): Achievement[] {
     },
     {
       id: 'restful_sleep',
-      title: 'Sueño Reparador',
-      description: 'Realiza tu rutina de descanso e higiene de sueño junto a tu mascota.',
+      title: 'Higiene y Sueño Reparador',
+      description: 'Realiza tu rutina de descanso nocturno y pon a dormir a tu mascota con luces apagadas.',
       icon: '🌙',
       category: 'health',
       target: 1,
@@ -253,7 +332,7 @@ export function generateInitialAchievements(): Achievement[] {
     {
       id: 'minigame_master',
       title: 'Campeón de Minijuegos',
-      description: 'Gana 5 minijuegos con victoria para acelerar el desarrollo de tu mascota.',
+      description: 'Gana 5 minijuegos para acelerar el desarrollo y felicidad de tu mascota.',
       icon: '🎮',
       category: 'care',
       target: 5,
@@ -263,7 +342,7 @@ export function generateInitialAchievements(): Achievement[] {
     },
     {
       id: 'spotless_home',
-      title: 'Hogar Impecable',
+      title: 'Hogar Reluciente',
       description: 'Limpia 10 popós acumuladas sin dejar que tu mascota enferme.',
       icon: '🧼',
       category: 'care',
@@ -274,14 +353,14 @@ export function generateInitialAchievements(): Achievement[] {
     },
     {
       id: 'loving_caregiver',
-      title: 'Corazón Afectuoso',
+      title: 'Vínculo de Amor',
       description: 'Hazle 25 caricias y mimos a tu Tamagotchi.',
       icon: '💖',
       category: 'care',
       target: 25,
       current: 0,
       unlocked: false,
-      rewardDescription: 'Vínculo de Amor Inquebrantable'
+      rewardDescription: 'Vínculo de Amor Incondicional'
     }
   ];
 }
@@ -334,7 +413,8 @@ const STORAGE_KEYS = {
   STATE: 'tamagotchi_game_state_v3',
   GRAVEYARD: 'tamagotchi_graveyard_records_v3',
   THEME: 'tamagotchi_device_theme_v3',
-  DISPLAY_MODE: 'tamagotchi_display_mode_v3'
+  DISPLAY_MODE: 'tamagotchi_display_mode_v3',
+  PET_SLOTS: 'tamagotchi_pet_slots_v3'
 };
 
 export function calculateStageForSeconds(totalEffectiveSeconds: number): EvolutionStage {
@@ -609,11 +689,19 @@ export function placeFlowersOnGrave(graveId: string): GraveyardRecord[] {
   return updated;
 }
 
-export function resetToNewEgg(customName = 'Piolín', nextGeneration = 1, preservedAchievements?: Achievement[]): TamagotchiState {
+export function resetToNewEgg(
+  customName = 'Piolín',
+  nextGeneration = 1,
+  preservedAchievements?: Achievement[],
+  species: PetSpecies = 'chick'
+): TamagotchiState {
   const today = getTodayDateString();
+  const petId = `pet_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
   const newState: TamagotchiState = {
     ...INITIAL_TAMAGOTCHI_STATE,
-    name: customName.trim() || `Tamatchi G${nextGeneration}`,
+    id: petId,
+    species: species || 'chick',
+    name: customName.trim() || (species === 'dog' ? `Perrito G${nextGeneration}` : `Tamatchi G${nextGeneration}`),
     generation: nextGeneration,
     stage: EvolutionStage.EGG_INCUBATING,
     birthTimestamp: Date.now(),
@@ -623,7 +711,7 @@ export function resetToNewEgg(customName = 'Piolín', nextGeneration = 1, preser
     ageDays: 1,
     hungryHearts: 4,
     happyHearts: 4,
-    weightGrams: 5,
+    weightGrams: species === 'dog' ? 12 : 5,
     poopCount: 0,
     isSick: false,
     isDead: false,
@@ -642,5 +730,48 @@ export function resetToNewEgg(customName = 'Piolín', nextGeneration = 1, preser
     lowestHealthRecorded: 100
   };
   saveState(newState);
+  updatePetInSlots(newState);
   return newState;
+}
+
+// Multi-Pet Collection Management (Switching between pets)
+export function loadPetSlots(): TamagotchiState[] {
+  try {
+    const saved = localStorage.getItem(STORAGE_KEYS.PET_SLOTS);
+    if (saved) {
+      const parsed = JSON.parse(saved);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        return parsed;
+      }
+    }
+  } catch (e) {
+    console.error('Failed to load pet slots', e);
+  }
+  const current = loadSavedState();
+  return [current];
+}
+
+export function savePetSlots(pets: TamagotchiState[]) {
+  try {
+    localStorage.setItem(STORAGE_KEYS.PET_SLOTS, JSON.stringify(pets));
+  } catch (e) {
+    console.error('Failed to save pet slots', e);
+  }
+}
+
+export function updatePetInSlots(pet: TamagotchiState) {
+  try {
+    const slots = loadPetSlots();
+    const existingIndex = slots.findIndex(
+      p => (pet.id && p.id === pet.id) || (p.species === pet.species && p.generation === pet.generation)
+    );
+    if (existingIndex >= 0) {
+      slots[existingIndex] = { ...pet, lastSavedTimestamp: Date.now() };
+    } else {
+      slots.push({ ...pet, lastSavedTimestamp: Date.now() });
+    }
+    savePetSlots(slots);
+  } catch (e) {
+    console.error('Failed to update pet in slots', e);
+  }
 }

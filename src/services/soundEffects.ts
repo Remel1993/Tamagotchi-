@@ -276,6 +276,21 @@ class TamagotchiAudio {
     this.playBeep(500, 0.02, 'triangle');
     setTimeout(() => this.playBeep(250, 0.03, 'triangle'), 30);
   }
+
+  // Sleep Zzz sound (gentle lullaby / deep soft snores)
+  public playSleepZzz() {
+    if (!this.soundEnabled) return;
+    this.playBeep(330, 0.12, 'sine');
+    setTimeout(() => this.playBeep(261.63, 0.18, 'sine'), 130);
+    setTimeout(() => this.playBeep(196, 0.25, 'sine'), 320);
+  }
+
+  // Loving pet sound
+  public playPetLove() {
+    if (!this.soundEnabled) return;
+    this.playPetChirp();
+    setTimeout(() => this.playHappy(), 120);
+  }
 }
 
 export const soundManager = new TamagotchiAudio();
