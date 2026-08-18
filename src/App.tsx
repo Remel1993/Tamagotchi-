@@ -25,20 +25,29 @@ import {
   ChevronDown,
   ChevronUp,
   FastForward,
-  Sliders
+  Sliders,
+  Thermometer,
+  Home,
+  ArrowLeft
 } from 'lucide-react';
+import { WelcomeScreen } from './components/WelcomeScreen';
 import { TamagotchiDevice } from './components/TamagotchiDevice';
 import { GraveyardModal } from './components/GraveyardModal';
 import { DailyQuestsModal } from './components/DailyQuestsModal';
 import { EvolutionTimeline } from './components/EvolutionTimeline';
 import { NewPetModal } from './components/NewPetModal';
+import { ManualModal } from './components/ManualModal';
+import { AchievementsModal } from './components/AchievementsModal';
+import { OwnerHealthModal } from './components/OwnerHealthModal';
 import {
   EvolutionStage,
   TamagotchiState,
   DeviceTheme,
   DisplayMode,
   GraveyardRecord,
-  DailyQuest
+  DailyQuest,
+  Achievement,
+  OwnerHabitsState
 } from './types/tamagotchi';
 import {
   loadSavedState,
@@ -51,7 +60,10 @@ import {
   calculateStageForSeconds,
   getTimeUntilNextStage,
   SECONDS_PER_DAY,
-  getTodayDateString
+  getTodayDateString,
+  getDayNightTimeOfDay,
+  generateInitialAchievements,
+  getInitialOwnerHabits
 } from './services/storage';
 import { soundManager } from './services/soundEffects';
 import { zumbaAudio } from './services/zumbaAudio';
@@ -62,12 +74,17 @@ export function App() {
   const [theme, setTheme] = useState<DeviceTheme>('neon-yellow');
   const [displayMode, setDisplayMode] = useState<DisplayMode>('hd');
 
+  // Main Screen View (Welcome Screen vs Simulator Device)
+  const [currentView, setCurrentView] = useState<'welcome' | 'device'>('welcome');
+
   // Modals and Panels visibility
   const [isTopPanelOpen, setIsTopPanelOpen] = useState<boolean>(false);
   const [showGraveyard, setShowGraveyard] = useState<boolean>(false);
   const [showQuests, setShowQuests] = useState<boolean>(false);
   const [showNewPet, setShowNewPet] = useState<boolean>(false);
   const [showGuide, setShowGuide] = useState<boolean>(false);
+  const [showAchievements, setShowAchievements] = useState<boolean>(false);
+  const [showOwnerHealth, setShowOwnerHealth] = useState<boolean>(false);
   const [showDevPanel, setShowDevPanel] = useState<boolean>(false);
 
   // Direct Zumba Music State
@@ -126,7 +143,72 @@ export function App() {
         const calculatedAgeDays = Math.min(7, Math.floor(totalEffectiveSeconds / SECONDS_PER_DAY) + 1);
         updated.ageDays = calculatedAgeDays;
 
-        // --- 1. 7-DAY STAGE EVOLUTION CHECK ---
+        // --- 1. SLEEP & LIGHT 8-HOUR CYCLE CHECK ---
+        const isSleeping = updated.isSleeping || !updated.lightsOn;
+        if (isSleeping) {
+          if (updated.sleepStartSeconds === undefined) {
+            updated.sleepStartSeconds = updated.elapsedSeconds;
+          }
+          const sleepDuration = updated.elapsedSeconds - updated.sleepStartSeconds;
+          const SLEEP_REQUIRED_SECONDS = 8 * 3600; // 28,800 seconds (8 continuous hours)
+
+          if (sleepDuration >= SLEEP_REQUIRED_SECONDS) {
+            // Auto wake up after 8 hours of restorative sleep!
+            updated.isSleeping = false;
+            updated.lightsOn = true;
+            updated.sleepStartSeconds = undefined;
+            soundManager.playHappy();
+            showRewardNotification(
+              '☀️ ¡Buenos Días!',
+              'Tu mascota completó sus 8 horas de sueño reparador y prendió la luz automáticamente.',
+              '✨'
+            );
+          }
+        }
+
+        // --- 1B. 20-MINUTE ZUMBA TIMER COUNTDOWN & REWARD (1 PER DAY) ---
+        if (updated.zumbaTimerRemainingSeconds && updated.zumbaTimerRemainingSeconds > 0) {
+          const decrementedSec = Math.min(updated.zumbaTimerRemainingSeconds, addSeconds);
+          updated.zumbaTimerRemainingSeconds = Math.max(0, updated.zumbaTimerRemainingSeconds - decrementedSec);
+
+          if (updated.zumbaTimerRemainingSeconds === 0) {
+            // 20-Minute Zumba session finished! Grant full day growth reward!
+            const growthBonusSec = SECONDS_PER_DAY; // +1 whole day (24h / 86400s)
+            const currentHp = typeof updated.healthPercent === 'number' ? updated.healthPercent : 100;
+            const newHp = Math.min(100, currentHp + 35);
+
+            updated.growthBonusSeconds += growthBonusSec;
+            updated.healthPercent = newHp;
+            updated.happyHearts = 4;
+            updated.hungryHearts = Math.max(3, updated.hungryHearts);
+            updated.discipline = Math.min(100, updated.discipline + 20);
+            updated.zumbaCompletedDate = getTodayDateString();
+            updated.zumbaData = {
+              ...updated.zumbaData,
+              todayMinutesCompleted: (updated.zumbaData?.todayMinutesCompleted || 0) + 20,
+              totalMinutesEver: (updated.zumbaData?.totalMinutesEver || 0) + 20,
+              totalCaloriesBurned: (updated.zumbaData?.totalCaloriesBurned || 0) + 190,
+              lastZumbaDate: getTodayDateString()
+            };
+
+            // Complete quest
+            updated.quests = updated.quests.map((q) => {
+              if (q.category === 'zumba' || q.id === 'quest-zumba') {
+                return { ...q, current: Math.min(q.target, q.current + 20), completed: true };
+              }
+              return q;
+            });
+
+            soundManager.playHappy();
+            showRewardNotification(
+              '🏆 ¡Zumba de 20 Minutos Completada!',
+              '¡Completaste tu sesión diaria de 20 minutos! Recibiste +1 Día Entero (+24h) de Crecimiento, +35% Salud Vital ❤️ y Felicidad al Máximo (4/4).',
+              '🔥'
+            );
+          }
+        }
+
+        // --- 1C. 7-DAY STAGE EVOLUTION CHECK ---
         const newCalculatedStage = calculateStageForSeconds(totalEffectiveSeconds);
         if (newCalculatedStage !== updated.stage && newCalculatedStage > updated.stage) {
           if (newCalculatedStage === EvolutionStage.BABY_CHICK) {
@@ -141,55 +223,119 @@ export function App() {
           updated.stage = newCalculatedStage;
         }
 
-        // --- 2. VITAL STATS DECAY (Hunger, Happiness, Poop) ---
-        // Hunger drops 1 heart frequently every 35s (scaled with speed)
-        if (Math.floor(updated.elapsedSeconds) % 35 === 0 && updated.hungryHearts > 0) {
-          updated.hungryHearts = Math.max(0, updated.hungryHearts - 1);
-        }
-
-        // Happiness drops 1 heart frequently every 40s
-        if (Math.floor(updated.elapsedSeconds) % 40 === 0 && updated.happyHearts > 0) {
-          updated.happyHearts = Math.max(0, updated.happyHearts - 1);
-        }
-
-        // Poop occurs frequently every 45s (if poopCount < 4)
-        if (Math.floor(updated.elapsedSeconds) % 45 === 0 && updated.poopCount < 4) {
-          soundManager.playPoop();
-          updated.poopCount += 1;
-        }
-
-        // --- 3. SICKNESS TRIGGERS (Egg and Chick catch cold & illness easily) ---
-        let currentHp = typeof updated.healthPercent === 'number' ? updated.healthPercent : 100;
-
-        if (!updated.isSick) {
-          const hasHygieneIssue = updated.poopCount >= 2 || updated.snacksEaten >= 2;
-          const hasNeglectIssue = updated.hungryHearts === 0 || updated.happyHearts === 0;
-          // Cold draft / sickness check every 50s with 30% chance if health < 85%
-          const coldDraft = Math.floor(updated.elapsedSeconds) % 50 === 0 && (currentHp < 85 || updated.hungryHearts <= 1) && Math.random() < 0.35;
-
-          if (hasHygieneIssue || hasNeglectIssue || coldDraft) {
-            soundManager.playRefuse();
-            updated.isSick = true;
-            updated.sickDosesNeeded = (updated.snacksEaten >= 3 || updated.poopCount >= 3) ? 2 : 1;
+        // --- 1D. 8-HOUR SLEEP AUTO-WAKE CHECK ---
+        if (updated.isSleeping && updated.sleepStartSeconds !== undefined) {
+          const sleepElapsed = updated.elapsedSeconds - updated.sleepStartSeconds;
+          const EIGHT_HOURS = 8 * 3600;
+          if (sleepElapsed >= EIGHT_HOURS) {
+            updated.isSleeping = false;
+            updated.lightsOn = true;
+            updated.sleepStartSeconds = undefined;
+            soundManager.playHappy();
+            showRewardNotification(
+              '🌅 ¡Buenos Días!',
+              'Tu mascota ha completado sus 8 horas de sueño reparador, encendió la luz y se despertó llena de energía.',
+              '☀️'
+            );
           }
         }
 
-        // --- 4. HEALTH BAR DECAY & QUEST NEGLECT SYSTEM ---
-        // Continuous natural decay: In 6 hours -> -25%, in 24 hours -> -100%
-        // (100% / 86400s) = ~0.0011574% per second
+        // --- 2. VITAL STATS DECAY (Hunger, Happiness, Poop) ---
+        const isEgg = updated.stage < EvolutionStage.BABY_CHICK;
+
+        if (isEgg) {
+          // Eggs absorb warmth from nest and don't consume solid food or generate poop
+          updated.hungryHearts = 4;
+          updated.happyHearts = 4;
+          updated.poopCount = 0;
+        } else {
+          // Hatched chick decay rules (Authentic Japanese 1996/1997 Tamagotchi Rhythms):
+          const isBaby = updated.stage === EvolutionStage.BABY_CHICK;
+          
+          // Baby chick requires frequent care; adult chick has longer, steadier intervals
+          const baseHunger = isBaby ? 120 : 240;
+          const baseHappy = isBaby ? 150 : 300;
+          const basePoop = isBaby ? 240 : 360;
+
+          // When sleeping in dark, decay is halted or slowed by 8x
+          const hungerInterval = isSleeping ? baseHunger * 8 : baseHunger;
+          const happyInterval = isSleeping ? baseHappy * 8 : baseHappy;
+
+          // Hunger drops 1 heart
+          if (Math.floor(updated.elapsedSeconds) % hungerInterval === 0 && updated.hungryHearts > 0) {
+            updated.hungryHearts = Math.max(0, updated.hungryHearts - 1);
+          }
+
+          // Happiness drops 1 heart
+          if (Math.floor(updated.elapsedSeconds) % happyInterval === 0 && updated.happyHearts > 0) {
+            updated.happyHearts = Math.max(0, updated.happyHearts - 1);
+          }
+
+          // Poop occurs only when awake or if lights left ON (classic Tamagotchi rule: no poop while sleeping in the dark)
+          if (!isSleeping && Math.floor(updated.elapsedSeconds) % basePoop === 0 && updated.poopCount < 4) {
+            soundManager.playPoop();
+            updated.poopCount += 1;
+          }
+
+          // Gradual discipline decay (slight decay every 600s if awake)
+          if (!isSleeping && Math.floor(updated.elapsedSeconds) % 600 === 0 && updated.disciplinePercent > 0) {
+            updated.disciplinePercent = Math.max(0, updated.disciplinePercent - 5);
+          }
+        }
+
+        // --- 3. SICKNESS TRIGGERS (Authentic Japanese Bandai 1996/1997 Tamagotchi Standards) ---
+        let currentHp = typeof updated.healthPercent === 'number' ? updated.healthPercent : 100;
+
+        if (!updated.isSick && !isEgg) {
+          // A. Cavities / Toothache: only when overfed sweets (5 or more snacks eaten without working out)
+          const hasSnackCavity = updated.snacksEaten >= 5;
+
+          // B. Filth Sickness: only if maximum capacity of 4 poops are left uncleaned for a prolonged time (check every 300s with 5% probability)
+          const hasPoopNeglect = updated.poopCount >= 4 && Math.floor(updated.elapsedSeconds) % 300 === 0 && Math.random() < 0.05;
+
+          // C. Severe Starvation Sickness: only if 0 hunger hearts and health critically low (< 20%)
+          const hasStarvationNeglect = updated.hungryHearts === 0 && currentHp < 20 && Math.floor(updated.elapsedSeconds) % 300 === 0 && Math.random() < 0.05;
+
+          // D. Rare Natural Stage Sickness: authentic rare event (check once per hour with 1.5% probability when awake)
+          const naturalStageSickness = !isSleeping && Math.floor(updated.elapsedSeconds) % 3600 === 0 && Math.random() < 0.015;
+
+          if (hasSnackCavity || hasPoopNeglect || hasStarvationNeglect || naturalStageSickness) {
+            soundManager.playRefuse();
+            updated.isSick = true;
+            updated.sickDosesNeeded = (hasSnackCavity || updated.poopCount >= 4) ? 2 : 1;
+            updated.needsAttention = true;
+          }
+        }
+
+        // --- 4. HEALTH BAR DECAY & RESTORATIVE SLEEP SYSTEM ---
+        // Natural awake baseline decay: In 6 hours -> -25%, in 24 hours -> -100%
         let baselineLoss = (100 / SECONDS_PER_DAY) * addSeconds;
         let neglectPenalty = 0;
 
-        // Additional neglect penalties
-        if (updated.hungryHearts === 0) neglectPenalty += (0.004 * addSeconds);
-        if (updated.happyHearts === 0) neglectPenalty += (0.002 * addSeconds);
-        if (updated.poopCount >= 3) neglectPenalty += (0.004 * addSeconds);
-        if (updated.isSick) neglectPenalty += (0.008 * addSeconds);
+        if (isSleeping) {
+          // RESTORATIVE SLEEP: Negates baseline loss and slowly regenerates health (+0.02%/sec)
+          // If lights are turned off in a clean environment and not sick
+          if (!updated.lightsOn && updated.poopCount === 0 && !updated.isSick) {
+            baselineLoss = 0;
+            currentHp = Math.min(100, currentHp + (0.02 * addSeconds));
+          } else {
+            // Partial sleep benefit if lights left on or dirty
+            baselineLoss = baselineLoss * 0.25;
+          }
+        }
 
-        // Quest neglect decay: if 0 quests completed after 1 hour
+        // Additional neglect penalties (only for active neglect)
+        if (!isEgg) {
+          if (updated.hungryHearts === 0) neglectPenalty += (0.004 * addSeconds);
+          if (updated.happyHearts === 0) neglectPenalty += (0.002 * addSeconds);
+          if (updated.poopCount >= 3) neglectPenalty += (0.004 * addSeconds);
+        }
+        if (updated.isSick) neglectPenalty += (0.006 * addSeconds);
+
+        // Quest neglect decay: if 0 quests completed after 1 hour of waking
         const completedQuests = updated.quests.filter((q) => q.current >= q.target).length;
-        if (completedQuests === 0 && updated.elapsedSeconds > 3600) {
-          neglectPenalty += (0.002 * addSeconds);
+        if (completedQuests === 0 && updated.elapsedSeconds > 3600 && !isSleeping) {
+          neglectPenalty += (0.001 * addSeconds);
         }
 
         const totalLoss = baselineLoss + neglectPenalty;
@@ -198,13 +344,11 @@ export function App() {
 
         // --- 5. ATTENTION CALL SYSTEM ---
         const needsCall =
-          updated.hungryHearts === 0 ||
-          updated.happyHearts === 0 ||
+          (!isEgg && (updated.hungryHearts === 0 || updated.happyHearts === 0 || updated.poopCount >= 2)) ||
           updated.isSick ||
-          updated.poopCount >= 2 ||
-          currentHp < 35;
+          currentHp < 30;
 
-        if (needsCall && !updated.needsAttention) {
+        if (needsCall && !updated.needsAttention && !isSleeping) {
           updated.needsAttention = true;
           soundManager.playAttentionCall();
         } else if (!needsCall && updated.needsAttention) {
@@ -213,11 +357,10 @@ export function App() {
 
         // --- 6. CRITICAL DEATH CHECK (Health = 0% or Severe Neglect) ---
         if (currentHp <= 0) {
-          // If quests were 0, death reason is quest neglect / lack of heat
-          if (completedQuests === 0) {
+          if (completedQuests === 0 && isEgg) {
             return triggerDeath(updated, 'quest_neglect');
           }
-          if (updated.hungryHearts === 0) {
+          if (updated.hungryHearts === 0 && !isEgg) {
             return triggerDeath(updated, 'hunger');
           }
           if (updated.isSick) {
@@ -307,46 +450,49 @@ export function App() {
     });
   };
 
-  // DIRECT 1-CLICK ZUMBA WORKOUT (Gives 1 Whole Day of Reward = +24h / 86400s)
-  const handleDirectZumbaWorkout = (minutes = 15) => {
+  // DIRECT 1-CLICK ZUMBA WORKOUT (20-Minute Timer & 1-Per-Day Lock)
+  const handleDirectZumbaWorkout = () => {
     if (petState.isDead) return;
 
+    const today = getTodayDateString();
+    if (petState.zumbaCompletedDate === today || (petState.zumbaData?.lastZumbaDate === today && petState.zumbaCompletedDate === today)) {
+      soundManager.playRefuse();
+      showRewardNotification(
+        '🔒 Zumba Bloqueada por Hoy',
+        'Solo se puede realizar 1 sesión de Zumba por día. ¡Ya completaste la de hoy con éxito! Vuelve mañana para entrenar.',
+        '✅'
+      );
+      return;
+    }
+
+    if ((petState.zumbaTimerRemainingSeconds || 0) > 0) {
+      soundManager.playSelect();
+      const remSec = petState.zumbaTimerRemainingSeconds!;
+      const m = Math.floor(remSec / 60);
+      const s = remSec % 60;
+      showRewardNotification(
+        '⏳ Zumba en Progreso',
+        `Temporizador activo: restan ${m}m ${s < 10 ? '0' : ''}${s}s para desbloquear la recompensa de +1 Día y +35% Salud. ¡A seguir bailando!`,
+        '💃'
+      );
+      return;
+    }
+
+    // Start 20-minute workout timer (20 min * 60 = 1200 seconds)
     soundManager.playHappy();
+    setPetState((prev) => ({
+      ...prev,
+      zumbaTimerRemainingSeconds: 1200
+    }));
 
-    // 15 min Zumba = +1 WHOLE DAY (+86,400s / 24 hours) of incubation / growth advance
-    const growthBonusSec = SECONDS_PER_DAY;
-    const caloriesBurned = minutes * 9.5; // ~142 kcal
-
-    setPetState((prev) => {
-      const newTotalMin = (prev.zumbaData?.totalMinutesEver || 0) + minutes;
-      const newTodayMin = (prev.zumbaData?.todayMinutesCompleted || 0) + minutes;
-      const newCalories = (prev.zumbaData?.totalCaloriesBurned || 0) + caloriesBurned;
-      const currentHp = typeof prev.healthPercent === 'number' ? prev.healthPercent : 100;
-      const newHp = Math.min(100, currentHp + 35); // +35% Health recovery!
-
-      return {
-        ...prev,
-        healthPercent: newHp,
-        growthBonusSeconds: prev.growthBonusSeconds + growthBonusSec,
-        happyHearts: 4,
-        hungryHearts: Math.max(3, prev.hungryHearts),
-        discipline: Math.min(100, prev.discipline + 20),
-        zumbaData: {
-          ...prev.zumbaData,
-          todayMinutesCompleted: newTodayMin,
-          totalMinutesEver: newTotalMin,
-          totalCaloriesBurned: Math.round(newCalories),
-          lastZumbaDate: getTodayDateString()
-        }
-      };
-    });
-
-    updateQuest('zumba', minutes);
+    if (!isZumbaMusicPlaying) {
+      handleToggleZumbaMusic();
+    }
 
     showRewardNotification(
-      '💃 ¡+1 Día Entero de Recompensa Zumba! (+24h)',
-      '¡+24 Horas de Crecimiento Acelerado, +35% Salud Vital ❤️ y Felicidad al Máximo (4/4)!',
-      '🔥'
+      '💃 ¡Temporizador de Zumba Iniciado (20 min)!',
+      'El temporizador de 20 minutos está corriendo. Al finalizar los 20 minutos recibirás automáticamente tu recompensa de +1 Día (+24h) de Crecimiento y +35% Salud.',
+      '⏳'
     );
   };
 
@@ -390,21 +536,194 @@ export function App() {
     }));
   };
 
+  const handleToggleSleep = () => {
+    soundManager.playSelect();
+    setPetState((prev) => {
+      const isCurrentlySleeping = prev.isSleeping || !prev.lightsOn;
+      if (isCurrentlySleeping) {
+        // Wake up immediately at user's will!
+        soundManager.playPetChirp();
+        showRewardNotification('☀️ ¡Mascota Despierta!', `${prev.name} se ha despertado con energía y alegría.`, '🐣');
+        return {
+          ...prev,
+          lightsOn: true,
+          isSleeping: false,
+          sleepStartSeconds: undefined
+        };
+      } else {
+        // Put to sleep immediately at user's will!
+        soundManager.playSleepZzz();
+        const currentHp = typeof prev.healthPercent === 'number' ? prev.healthPercent : 100;
+        showRewardNotification('💤 ¡A Dormir!', `${prev.name} está durmiendo plácidamente con manta térmica (+20% Salud).`, '🌙');
+        return {
+          ...prev,
+          lightsOn: false,
+          isSleeping: true,
+          healthPercent: Math.min(100, currentHp + 20),
+          sleepStartSeconds: prev.elapsedSeconds
+        };
+      }
+    });
+  };
+
   const handleToggleLights = () => {
-    setPetState((prev) => ({
-      ...prev,
-      lightsOn: !prev.lightsOn,
-      isSleeping: prev.lightsOn
-    }));
+    handleToggleSleep();
+  };
+
+  const handleDrinkWater = () => {
+    soundManager.playSelect();
+    const todayStr = getTodayDateString();
+    setPetState((prev) => {
+      const habits = prev.ownerHabits || getInitialOwnerHabits();
+      const currentWater = habits.lastWaterDate === todayStr ? habits.waterGlassesToday : 0;
+      if (currentWater >= 8) return prev;
+
+      const newWater = currentWater + 1;
+      const totalWater = (habits.totalWaterLogged || 0) + 1;
+      const currentHp = typeof prev.healthPercent === 'number' ? prev.healthPercent : 100;
+      const newHp = Math.min(100, currentHp + 3);
+
+      const updatedHabits: OwnerHabitsState = {
+        ...habits,
+        waterGlassesToday: newWater,
+        lastWaterDate: todayStr,
+        totalWaterLogged: totalWater
+      };
+
+      // Check achievement hydration_master
+      const achs = (prev.achievements || generateInitialAchievements()).map((a) => {
+        if (a.id === 'hydration_master') {
+          const unlocked = newWater >= 8;
+          return { ...a, current: Math.max(a.current, newWater), unlocked: a.unlocked || unlocked };
+        }
+        return a;
+      });
+
+      return {
+        ...prev,
+        healthPercent: newHp,
+        ownerHabits: updatedHabits,
+        achievements: achs
+      };
+    });
+
+    showRewardNotification(
+      '💧 ¡Vaso de Agua Tomado!',
+      `Hidratación registrada (${(petState.ownerHabits?.waterGlassesToday || 0) + 1}/8). ¡+3% Salud Vital para ${petState.name}!`,
+      '🌊'
+    );
+  };
+
+  const handleTakePills = () => {
+    soundManager.playSelect();
+    const todayStr = getTodayDateString();
+    setPetState((prev) => {
+      const habits = prev.ownerHabits || getInitialOwnerHabits();
+      if (habits.pillsTakenToday && habits.lastPillDate === todayStr) return prev;
+
+      const totalPillDays = (habits.totalPillDays || 0) + 1;
+      const currentHp = typeof prev.healthPercent === 'number' ? prev.healthPercent : 100;
+      const newHp = Math.min(100, currentHp + 15);
+
+      const updatedHabits: OwnerHabitsState = {
+        ...habits,
+        pillsTakenToday: true,
+        lastPillDate: todayStr,
+        totalPillDays
+      };
+
+      // Check medication_champion achievement
+      const achs = (prev.achievements || generateInitialAchievements()).map((a) => {
+        if (a.id === 'medication_champion') {
+          const unlocked = totalPillDays >= 3;
+          return { ...a, current: totalPillDays, unlocked: a.unlocked || unlocked };
+        }
+        return a;
+      });
+
+      return {
+        ...prev,
+        healthPercent: newHp,
+        isSick: false, // Prevents sickness
+        ownerHabits: updatedHabits,
+        achievements: achs
+      };
+    });
+
+    showRewardNotification(
+      '💊 ¡Medicación / Vitaminas Tomadas!',
+      `¡Compromiso con tu salud cumplido! +15% Salud y escudo preventivo para ${petState.name}.`,
+      '🛡️'
+    );
+  };
+
+  const handleCompleteSleepRoutine = () => {
+    soundManager.playSelect();
+    const todayStr = getTodayDateString();
+    const isSleepingNow = petState.isSleeping;
+
+    if (isSleepingNow) {
+      // Wake up
+      handleToggleSleep();
+    } else {
+      // Start sleep routine
+      setPetState((prev) => {
+        const habits = prev.ownerHabits || getInitialOwnerHabits();
+        const totalSleepRoutines = (habits.totalSleepRoutines || 0) + 1;
+        const currentHp = typeof prev.healthPercent === 'number' ? prev.healthPercent : 100;
+
+        const updatedHabits: OwnerHabitsState = {
+          ...habits,
+          sleepRoutineDoneToday: true,
+          lastSleepRoutineDate: todayStr,
+          totalSleepRoutines
+        };
+
+        const achs = (prev.achievements || generateInitialAchievements()).map((a) => {
+          if (a.id === 'restful_sleep') {
+            return { ...a, current: 1, unlocked: true };
+          }
+          return a;
+        });
+
+        return {
+          ...prev,
+          isSleeping: true,
+          lightsOn: false,
+          healthPercent: Math.min(100, currentHp + 20),
+          ownerHabits: updatedHabits,
+          achievements: achs
+        };
+      });
+
+      showRewardNotification(
+        '🌙 ¡Rutina de Sueño Iniciada!',
+        `Luces apagadas y descanso activado. +20% Salud Vital y protección térmica nocturna.`,
+        '💤'
+      );
+    }
   };
 
   const handleCleanPoop = () => {
     setPetState((prev) => {
       const currentHp = typeof prev.healthPercent === 'number' ? prev.healthPercent : 100;
+      const poopCleaned = (prev.poopCleanedCount || 0) + 1;
+
+      // Check spotless_home achievement
+      const achs = (prev.achievements || generateInitialAchievements()).map((a) => {
+        if (a.id === 'spotless_home') {
+          const unlocked = poopCleaned >= 10;
+          return { ...a, current: poopCleaned, unlocked: a.unlocked || unlocked };
+        }
+        return a;
+      });
+
       return {
         ...prev,
         healthPercent: Math.min(100, currentHp + 10),
         poopCount: 0,
+        poopCleanedCount: poopCleaned,
+        achievements: achs,
         needsAttention: prev.hungryHearts === 0 || prev.happyHearts === 0 || prev.isSick
       };
     });
@@ -437,12 +756,25 @@ export function App() {
   const handleMiniGameComplete = (won: boolean) => {
     setPetState((prev) => {
       const currentHp = typeof prev.healthPercent === 'number' ? prev.healthPercent : 100;
+      const minigamesWon = won ? (prev.minigamesWonCount || 0) + 1 : prev.minigamesWonCount || 0;
+
+      // Check minigame_master achievement
+      const achs = (prev.achievements || generateInitialAchievements()).map((a) => {
+        if (a.id === 'minigame_master') {
+          const unlocked = minigamesWon >= 5;
+          return { ...a, current: minigamesWon, unlocked: a.unlocked || unlocked };
+        }
+        return a;
+      });
+
       return {
         ...prev,
         healthPercent: won ? Math.min(100, currentHp + 15) : currentHp,
         happyHearts: won ? Math.min(4, prev.happyHearts + 1) : prev.happyHearts,
         weightGrams: Math.max(5, prev.weightGrams - (won ? 2 : 1)),
-        growthBonusSeconds: won ? prev.growthBonusSeconds + 1800 : prev.growthBonusSeconds // +30 min bonus on win!
+        growthBonusSeconds: won ? prev.growthBonusSeconds + 1800 : prev.growthBonusSeconds,
+        minigamesWonCount: minigamesWon,
+        achievements: achs
       };
     });
     if (won) {
@@ -459,11 +791,24 @@ export function App() {
     soundManager.playPetChirp();
     setPetState((prev) => {
       const currentHp = typeof prev.healthPercent === 'number' ? prev.healthPercent : 100;
+      const petsGiven = (prev.petsGivenCount || 0) + 1;
+
+      // Check loving_caregiver achievement
+      const achs = (prev.achievements || generateInitialAchievements()).map((a) => {
+        if (a.id === 'loving_caregiver') {
+          const unlocked = petsGiven >= 25;
+          return { ...a, current: petsGiven, unlocked: a.unlocked || unlocked };
+        }
+        return a;
+      });
+
       return {
         ...prev,
         healthPercent: Math.min(100, currentHp + 3),
         happyHearts: Math.min(4, prev.happyHearts + 1),
-        discipline: Math.min(100, prev.discipline + 2)
+        discipline: Math.min(100, prev.discipline + 2),
+        petsGivenCount: petsGiven,
+        achievements: achs
       };
     });
     updateQuest('quest-pet', 1);
@@ -571,6 +916,124 @@ export function App() {
   const completedQuestsCount = petState.quests.filter((q) => q.current >= q.target).length;
   const currentHealth = typeof petState.healthPercent === 'number' ? petState.healthPercent : 100;
 
+  if (currentView === 'welcome') {
+    return (
+      <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans selection:bg-amber-500 selection:text-slate-950">
+        {/* Top Floating Reward Toast Notification */}
+        <AnimatePresence>
+          {rewardToast && (
+            <motion.div
+              initial={{ opacity: 0, y: -40, scale: 0.9 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: -20, scale: 0.9 }}
+              className="fixed top-4 left-1/2 -translate-x-1/2 z-50 bg-gradient-to-r from-amber-500 via-rose-500 to-amber-500 text-slate-950 p-3 sm:p-4 rounded-2xl shadow-2xl border-2 border-amber-300 font-bold max-w-md w-[92%] flex items-center gap-3"
+            >
+              <span className="text-3xl animate-bounce">{rewardToast.icon}</span>
+              <div className="flex-1">
+                <div className="text-sm font-black uppercase tracking-wide">{rewardToast.title}</div>
+                <div className="text-xs font-semibold text-slate-900">{rewardToast.description}</div>
+              </div>
+              <button
+                onClick={() => setRewardToast(null)}
+                className="text-slate-900 hover:text-black font-black text-sm p-1 cursor-pointer"
+              >
+                ✕
+              </button>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        <WelcomeScreen
+          state={petState}
+          graveyardRecords={graveyardRecords}
+          theme={theme}
+          displayMode={displayMode}
+          isZumbaMusicPlaying={isZumbaMusicPlaying}
+          onStartGame={() => {
+            soundManager.playStartGame();
+            setCurrentView('device');
+          }}
+          onOpenGraveyard={() => setShowGraveyard(true)}
+          onOpenQuests={() => setShowQuests(true)}
+          onOpenNewPet={() => setShowNewPet(true)}
+          onOpenGuide={() => setShowGuide(true)}
+          onOpenAchievements={() => setShowAchievements(true)}
+          onOpenOwnerHealth={() => setShowOwnerHealth(true)}
+          onToggleSleep={handleToggleSleep}
+          onDirectZumba={handleDirectZumbaWorkout}
+          onToggleTheme={() => {
+            const themes: DeviceTheme[] = ['neon-yellow', 'cyber-purple', 'retro-teal', 'coral-pink', 'midnight-black', 'vintage-white'];
+            const nextTheme = themes[(themes.indexOf(theme) + 1) % themes.length];
+            setTheme(nextTheme);
+          }}
+          onToggleSound={handleToggleZumbaMusic}
+          onPet={handlePet}
+        />
+
+        {/* MODALS */}
+        <AnimatePresence>
+          {showAchievements && (
+            <AchievementsModal
+              achievements={petState.achievements || generateInitialAchievements()}
+              onClose={() => setShowAchievements(false)}
+            />
+          )}
+
+          {showOwnerHealth && (
+            <OwnerHealthModal
+              habits={petState.ownerHabits || getInitialOwnerHabits()}
+              petName={petState.name}
+              isPetSleeping={petState.isSleeping}
+              onClose={() => setShowOwnerHealth(false)}
+              onDrinkWater={handleDrinkWater}
+              onTakePills={handleTakePills}
+              onCompleteSleepRoutine={handleCompleteSleepRoutine}
+            />
+          )}
+
+          {showGraveyard && (
+            <GraveyardModal
+              records={graveyardRecords}
+              onClose={() => setShowGraveyard(false)}
+              onNewPet={() => {
+                setShowGraveyard(false);
+                setShowNewPet(true);
+              }}
+              onRecordsUpdated={(updated) => setGraveyardRecords(updated)}
+            />
+          )}
+
+          {showQuests && (
+            <DailyQuestsModal
+              quests={petState.quests}
+              onClose={() => setShowQuests(false)}
+              onClaimQuest={handleClaimQuest}
+              onOpenZumba={() => {
+                setShowQuests(false);
+                handleDirectZumbaWorkout();
+              }}
+            />
+          )}
+
+          {showNewPet && (
+            <NewPetModal
+              currentGeneration={petState.generation}
+              onClose={() => setShowNewPet(false)}
+              onConfirmHatch={handleConfirmNewPet}
+            />
+          )}
+
+          {showGuide && (
+            <ManualModal
+              isOpen={showGuide}
+              onClose={() => setShowGuide(false)}
+            />
+          )}
+        </AnimatePresence>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans selection:bg-amber-500 selection:text-slate-950">
       {/* Top Floating Reward Toast Notification */}
@@ -602,14 +1065,32 @@ export function App() {
         <div className="max-w-5xl mx-auto px-3 sm:px-4 py-2.5 flex flex-wrap items-center justify-between gap-2.5">
           {/* Logo & Pet Info */}
           <div className="flex items-center gap-2.5">
-            <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-amber-400 to-yellow-500 flex items-center justify-center text-xl shadow-md shadow-amber-500/20">
+            <button
+              onClick={() => {
+                soundManager.playSelect();
+                setCurrentView('welcome');
+              }}
+              className="w-9 h-9 rounded-xl bg-gradient-to-tr from-amber-400 to-yellow-500 hover:from-amber-300 flex items-center justify-center text-xl shadow-md shadow-amber-500/20 cursor-pointer transition-all active:scale-95"
+              title="Volver a la Pantalla de Inicio"
+            >
               🐣
-            </div>
+            </button>
             <div>
               <h1 className="text-sm sm:text-base font-black tracking-tight flex items-center gap-1.5">
                 {petState.name}
                 <span className="text-[10px] uppercase font-bold bg-amber-400/20 text-amber-300 border border-amber-400/30 px-1.5 py-0.5 rounded-full">
                   Gen {petState.generation} • Día {petState.ageDays}/7
+                </span>
+                <span className={`text-[10px] uppercase font-bold px-1.5 py-0.5 rounded-full border ${
+                  getDayNightTimeOfDay() === 'night'
+                    ? 'bg-indigo-950/80 text-indigo-300 border-indigo-500/40'
+                    : getDayNightTimeOfDay() === 'dawn'
+                    ? 'bg-orange-950/80 text-amber-300 border-amber-500/40'
+                    : getDayNightTimeOfDay() === 'afternoon'
+                    ? 'bg-rose-950/80 text-rose-300 border-rose-500/40'
+                    : 'bg-cyan-950/80 text-cyan-300 border-cyan-500/40'
+                }`}>
+                  {getDayNightTimeOfDay() === 'night' ? '🌙 Noche' : getDayNightTimeOfDay() === 'dawn' ? '🌅 Amanecer' : getDayNightTimeOfDay() === 'afternoon' ? '🌇 Atardecer' : '☀️ Día'}
                 </span>
               </h1>
               <p className="text-[11px] text-slate-400">
@@ -620,6 +1101,18 @@ export function App() {
 
           {/* Quick Action Buttons in Top Bar */}
           <div className="flex flex-wrap items-center gap-2 text-xs">
+            {/* VOLVER AL PANEL PRINCIPAL BUTTON */}
+            <button
+              onClick={() => {
+                soundManager.playSelect();
+                setCurrentView('welcome');
+              }}
+              className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl font-black bg-gradient-to-r from-amber-400 via-yellow-400 to-amber-500 hover:from-amber-300 hover:to-yellow-300 text-slate-950 shadow-md shadow-amber-500/30 transition-all cursor-pointer active:scale-95 text-xs border border-yellow-200"
+              title="Regresar al Panel Principal de Bienvenida"
+            >
+              <ArrowLeft className="w-4 h-4 stroke-[3]" />
+              <span>Volver al Panel</span>
+            </button>
             {/* DIRECT +24 HRS SIMULATION BUTTON */}
             <button
               onClick={() => handleAdvanceDay(1)}
@@ -630,15 +1123,39 @@ export function App() {
               <span>+24 hrs</span>
             </button>
 
-            {/* DIRECT 1-CLICK ZUMBA REWARD BUTTON (NO POPUP) */}
+            {/* DIRECT 1-CLICK ZUMBA REWARD BUTTON (WITH 20-MIN TIMER AND 1-PER-DAY LOCK) */}
             <button
-              onClick={() => handleDirectZumbaWorkout(15)}
-              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl font-black bg-gradient-to-r from-rose-500 via-amber-500 to-yellow-500 hover:from-rose-400 hover:to-yellow-400 text-slate-950 shadow-md shadow-rose-500/20 transition-all cursor-pointer active:scale-95"
-              title="1 Clic: Otorga +15 min Zumba, +2h Crecimiento y +25% Salud al instante"
+              onClick={() => handleDirectZumbaWorkout()}
+              disabled={petState.zumbaCompletedDate === getTodayDateString()}
+              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl font-black shadow-md transition-all cursor-pointer active:scale-95 text-xs ${
+                petState.zumbaCompletedDate === getTodayDateString()
+                  ? 'bg-slate-800 text-slate-400 border border-slate-700 cursor-not-allowed opacity-85'
+                  : (petState.zumbaTimerRemainingSeconds || 0) > 0
+                  ? 'bg-gradient-to-r from-amber-500 to-orange-500 text-slate-950 shadow-amber-500/30 animate-pulse'
+                  : 'bg-gradient-to-r from-rose-500 via-amber-500 to-yellow-500 hover:from-rose-400 hover:to-yellow-400 text-slate-950 shadow-rose-500/20'
+              }`}
+              title={
+                petState.zumbaCompletedDate === getTodayDateString()
+                  ? 'Ya completaste la sesión de Zumba hoy. Vuelve mañana.'
+                  : (petState.zumbaTimerRemainingSeconds || 0) > 0
+                  ? `Temporizador activo: restan ${Math.floor((petState.zumbaTimerRemainingSeconds || 0) / 60)}m ${((petState.zumbaTimerRemainingSeconds || 0) % 60)}s`
+                  : 'Iniciar sesión de Zumba (20 min). Al finalizar otorga +1 Día de crecimiento y +35% salud.'
+              }
             >
-              <Flame className="w-3.5 h-3.5 text-slate-950 fill-slate-950" />
-              <span className="hidden sm:inline">💃 Bailar Zumba</span>
-              <span className="sm:hidden">💃 Zumba</span>
+              <Flame className="w-3.5 h-3.5 fill-current" />
+              {petState.zumbaCompletedDate === getTodayDateString() ? (
+                <span>✅ Zumba Lista</span>
+              ) : (petState.zumbaTimerRemainingSeconds || 0) > 0 ? (
+                <span>
+                  ⏳ {Math.floor((petState.zumbaTimerRemainingSeconds || 0) / 60)}:
+                  {String((petState.zumbaTimerRemainingSeconds || 0) % 60).padStart(2, '0')}
+                </span>
+              ) : (
+                <>
+                  <span className="hidden sm:inline">💃 Zumba (20m)</span>
+                  <span className="sm:hidden">💃 Zumba</span>
+                </>
+              )}
             </button>
 
             {/* Cementerio Button */}
@@ -668,6 +1185,32 @@ export function App() {
               {completedQuestsCount > 0 && (
                 <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-emerald-400 rounded-full animate-ping" />
               )}
+            </button>
+
+            {/* Logros (Achievements) Button */}
+            <button
+              onClick={() => {
+                soundManager.playSelect();
+                setShowAchievements(true);
+              }}
+              className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl font-bold bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border border-amber-400/30 shadow-xs transition-all cursor-pointer active:scale-95"
+              title="Ver Sistema de Logros Desbloqueables"
+            >
+              <span>🏆</span>
+              <span className="hidden sm:inline">Logros</span>
+            </button>
+
+            {/* Hábitos del Dueño Button */}
+            <button
+              onClick={() => {
+                soundManager.playSelect();
+                setShowOwnerHealth(true);
+              }}
+              className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl font-bold bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-300 border border-cyan-400/30 shadow-xs transition-all cursor-pointer active:scale-95"
+              title="Registrar Hidratación, Medicación y Rutina de Sueño"
+            >
+              <span>💧</span>
+              <span className="hidden sm:inline">Hábitos</span>
             </button>
 
             {/* DESPLEGABLE / COLLAPSIBLE TOP PANEL TOGGLE BUTTON */}
@@ -752,11 +1295,27 @@ export function App() {
                   {/* 1-Click Zumba Boost in Panel */}
                   <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
                     <button
-                      onClick={() => handleDirectZumbaWorkout(15)}
-                      className="flex items-center gap-1.5 bg-gradient-to-r from-rose-500 to-amber-500 hover:from-rose-400 text-white font-black px-3.5 py-2 rounded-xl text-xs shadow-md cursor-pointer active:scale-95"
+                      onClick={() => handleDirectZumbaWorkout()}
+                      disabled={petState.zumbaCompletedDate === getTodayDateString()}
+                      className={`flex items-center gap-1.5 font-black px-3.5 py-2 rounded-xl text-xs shadow-md cursor-pointer active:scale-95 transition-all ${
+                        petState.zumbaCompletedDate === getTodayDateString()
+                          ? 'bg-slate-800 text-slate-400 border border-slate-700 cursor-not-allowed'
+                          : (petState.zumbaTimerRemainingSeconds || 0) > 0
+                          ? 'bg-gradient-to-r from-amber-500 to-orange-500 text-slate-950 animate-pulse'
+                          : 'bg-gradient-to-r from-rose-500 to-amber-500 hover:from-rose-400 text-white'
+                      }`}
                     >
-                      <Flame className="w-3.5 h-3.5" />
-                      <span>+15m Zumba (+25% ❤️)</span>
+                      <Flame className="w-3.5 h-3.5 fill-current" />
+                      {petState.zumbaCompletedDate === getTodayDateString() ? (
+                        <span>✅ Zumba Completada (Hoy)</span>
+                      ) : (petState.zumbaTimerRemainingSeconds || 0) > 0 ? (
+                        <span>
+                          ⏳ Zumba ({Math.floor((petState.zumbaTimerRemainingSeconds || 0) / 60)}:
+                          {String((petState.zumbaTimerRemainingSeconds || 0) % 60).padStart(2, '0')})
+                        </span>
+                      ) : (
+                        <span>💃 Zumba (20 min • +1 Día)</span>
+                      )}
                     </button>
                   </div>
                 </div>
@@ -922,8 +1481,21 @@ export function App() {
           )}
         </AnimatePresence>
 
-        {/* Clean Collapsible Toggle Quick Pill above the Tamagotchi */}
-        <div className="w-full flex items-center justify-center gap-2">
+        {/* Clean Collapsible Toggle & Navigation Quick Pills above the Tamagotchi */}
+        <div className="w-full flex flex-wrap items-center justify-center gap-2">
+          {/* Direct Back to Welcome Screen Pill */}
+          <button
+            onClick={() => {
+              soundManager.playSelect();
+              setCurrentView('welcome');
+            }}
+            className="flex items-center gap-1.5 px-4 py-1.5 rounded-full bg-slate-900/95 hover:bg-slate-800 border-2 border-amber-400/70 text-xs font-black text-amber-300 shadow-lg shadow-amber-400/15 transition-all cursor-pointer active:scale-95 hover:border-amber-300"
+            title="Volver a la Pantalla de Inicio / Panel Principal"
+          >
+            <ArrowLeft className="w-3.5 h-3.5 stroke-[2.5]" />
+            <span>⬅️ Volver al Panel Principal</span>
+          </button>
+
           <button
             onClick={() => {
               soundManager.playBeep(900, 0.02);
@@ -932,7 +1504,7 @@ export function App() {
             className="flex items-center gap-2 px-4 py-1.5 rounded-full bg-slate-900/90 hover:bg-slate-800 border border-slate-700/80 text-xs font-bold text-slate-300 shadow-md transition-all cursor-pointer active:scale-95"
           >
             <Sliders className="w-3.5 h-3.5 text-amber-400" />
-            <span>{isTopPanelOpen ? '🔼 Ocultar Panel Superior' : '🔽 Desplegar Panel de Cuidador & Simulación'}</span>
+            <span>{isTopPanelOpen ? '🔼 Ocultar Panel' : '🔽 Panel Cuidador'}</span>
             <span className="text-[10px] bg-slate-800 px-2 py-0.5 rounded-full font-mono text-emerald-400 font-black">
               ❤️ {currentHealth}%
             </span>
@@ -967,11 +1539,147 @@ export function App() {
           onPet={handlePet}
         />
 
+        {/* EGG VITAL WARMTH & INCUBATION MONITOR (Shows clearly how the egg absorbs warmth and avoids freezing) */}
+        {petState.stage < EvolutionStage.BABY_CHICK && (
+          <motion.div
+            initial={{ opacity: 0, y: 15 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="w-full max-w-2xl bg-gradient-to-b from-slate-900/95 to-slate-950/95 border-2 border-amber-500/40 rounded-3xl p-4 sm:p-5 shadow-2xl space-y-3.5"
+          >
+            {/* Header with Temperature Gauge */}
+            <div className="flex flex-wrap items-center justify-between gap-2 pb-3 border-b border-amber-500/20">
+              <div className="flex items-center gap-2.5">
+                <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-amber-500 to-rose-500 flex items-center justify-center text-xl shadow-lg shadow-amber-500/30">
+                  <Thermometer className="w-5 h-5 text-slate-950 stroke-[2.5]" />
+                </div>
+                <div>
+                  <h2 className="text-sm sm:text-base font-black text-amber-300 flex items-center gap-2">
+                    <span>Monitor de Calor Vital e Incubación</span>
+                    <span className="text-[10px] bg-amber-400/20 text-amber-200 border border-amber-400/30 px-2 py-0.5 rounded-full font-mono">
+                      Día {petState.ageDays}/7
+                    </span>
+                  </h2>
+                  <p className="text-[11px] text-slate-300">
+                    Temperatura térmica del huevo: <span className="font-bold text-amber-400 font-mono">{(36.0 + (currentHealth / 100) * 2.2).toFixed(1)}°C</span> ({currentHealth}% Calor Vital)
+                  </p>
+                </div>
+              </div>
+
+              {/* Status Badge */}
+              <span
+                className={`text-xs font-black uppercase px-3 py-1 rounded-full border shadow-sm ${
+                  currentHealth > 70
+                    ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
+                    : currentHealth > 40
+                    ? 'bg-amber-500/20 text-amber-300 border-amber-500/40 animate-pulse'
+                    : 'bg-rose-500/25 text-rose-300 border-rose-500/50 animate-bounce'
+                }`}
+              >
+                {currentHealth > 70 ? '🔥 Nido Cálido & Saludable' : currentHealth > 40 ? '♨️ Temperatura Estable' : '❄️ ¡PELIGRO DE FRÍO!'}
+              </span>
+            </div>
+
+            {/* Visual Temperature Meter Bar */}
+            <div className="space-y-1">
+              <div className="flex items-center justify-between text-[10px] font-mono font-bold text-slate-400">
+                <span>❄️ 35.0°C (Crítico)</span>
+                <span className="text-amber-300 font-black">🌡️ Rango Óptimo: 37.0°C - 38.2°C</span>
+                <span>🔥 38.5°C (Máx)</span>
+              </div>
+              <div className="w-full h-3.5 bg-slate-950 rounded-full p-0.5 border border-amber-500/30 overflow-hidden shadow-inner">
+                <motion.div
+                  className={`h-full rounded-full transition-all duration-500 ${
+                    currentHealth > 70
+                      ? 'bg-gradient-to-r from-amber-500 via-yellow-400 to-rose-500 shadow-md shadow-amber-500/40'
+                      : currentHealth > 40
+                      ? 'bg-gradient-to-r from-amber-600 to-yellow-500'
+                      : 'bg-gradient-to-r from-blue-600 via-rose-600 to-red-500 animate-pulse'
+                  }`}
+                  style={{ width: `${Math.max(6, currentHealth)}%` }}
+                />
+              </div>
+            </div>
+
+            {/* 4 Interactive Sources of Vital Warmth (DÓNDE ABSORBE CALOR EL HUEVO) */}
+            <div className="space-y-2 pt-1">
+              <span className="text-[11px] font-black text-slate-300 uppercase tracking-wider block">
+                ¿Dónde y cómo absorbe calor el huevo para no morir de frío?
+              </span>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                {/* 1. Caricias */}
+                <div
+                  onClick={() => handlePet()}
+                  className="p-3 rounded-2xl bg-slate-950/70 hover:bg-slate-900 border border-amber-500/30 transition-all cursor-pointer group active:scale-98"
+                >
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className="text-lg group-hover:scale-110 transition-transform">🤲</span>
+                    <span className="font-black text-xs text-amber-300">1. Caricias al Cascarón</span>
+                    <span className="ml-auto text-[9px] font-mono font-bold bg-amber-400/15 text-amber-300 px-1.5 py-0.2 rounded">
+                      +3% Calor
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-slate-300 leading-snug">
+                    Toca el huevo en la pantalla LCD o haz clic aquí. Transfiere calor biológico directo de tus manos.
+                  </p>
+                </div>
+
+                {/* 2. Minijuegos */}
+                <div className="p-3 rounded-2xl bg-slate-950/70 border border-amber-500/30">
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className="text-lg">🎮</span>
+                    <span className="font-black text-xs text-amber-300">2. Minijuegos de Destreza</span>
+                    <span className="ml-auto text-[9px] font-mono font-bold bg-amber-400/15 text-amber-300 px-1.5 py-0.2 rounded">
+                      +15% Calor
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-slate-300 leading-snug">
+                    Juega en el botón 🎮 del Tamagotchi. La fricción y victorias térmicas aceleran 30 min la incubación.
+                  </p>
+                </div>
+
+                {/* 3. Zumba */}
+                <div
+                  onClick={() => handleDirectZumbaWorkout()}
+                  className="p-3 rounded-2xl bg-gradient-to-r from-rose-950/40 to-amber-950/40 hover:from-rose-950/60 hover:to-amber-950/60 border border-rose-500/40 transition-all cursor-pointer group active:scale-98"
+                >
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className="text-lg group-hover:scale-110 transition-transform">💃</span>
+                    <span className="font-black text-xs text-rose-300">3. Sesión Zumba 20 min</span>
+                    <span className="ml-auto text-[9px] font-mono font-bold bg-rose-500/20 text-rose-300 px-1.5 py-0.2 rounded">
+                      +35% Calor & +24h
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-slate-300 leading-snug">
+                    Tu entrenamiento genera calor masivo que calienta el nido y avanza 1 día completo de incubación.
+                  </p>
+                </div>
+
+                {/* 4. Retos y Sueño */}
+                <div
+                  onClick={() => setShowQuests(true)}
+                  className="p-3 rounded-2xl bg-slate-950/70 hover:bg-slate-900 border border-emerald-500/30 transition-all cursor-pointer active:scale-98"
+                >
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className="text-lg">🪺</span>
+                    <span className="font-black text-xs text-emerald-300">4. Retos del Nido & Sueño</span>
+                    <span className="ml-auto text-[9px] font-mono font-bold bg-emerald-500/20 text-emerald-300 px-1.5 py-0.2 rounded">
+                      Aislante Térmico
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-slate-300 leading-snug">
+                    Cumplir los 5 retos diarios y apagar la luz para que duerma 8h conserva el calor del nido.
+                  </p>
+                </div>
+              </div>
+            </div>
+          </motion.div>
+        )}
+
         {/* 7-Day Evolution Timeline Component */}
         <div className="w-full max-w-2xl">
           <EvolutionTimeline
             state={petState}
-            onOpenZumba={() => handleDirectZumbaWorkout(15)}
+            onOpenZumba={() => handleDirectZumbaWorkout()}
           />
         </div>
 
@@ -1032,6 +1740,25 @@ export function App() {
 
       {/* MODALS */}
       <AnimatePresence>
+        {showAchievements && (
+          <AchievementsModal
+            achievements={petState.achievements || generateInitialAchievements()}
+            onClose={() => setShowAchievements(false)}
+          />
+        )}
+
+        {showOwnerHealth && (
+          <OwnerHealthModal
+            habits={petState.ownerHabits || getInitialOwnerHabits()}
+            petName={petState.name}
+            isPetSleeping={petState.isSleeping}
+            onClose={() => setShowOwnerHealth(false)}
+            onDrinkWater={handleDrinkWater}
+            onTakePills={handleTakePills}
+            onCompleteSleepRoutine={handleCompleteSleepRoutine}
+          />
+        )}
+
         {showGraveyard && (
           <GraveyardModal
             records={graveyardRecords}
@@ -1051,7 +1778,7 @@ export function App() {
             onClaimQuest={handleClaimQuest}
             onOpenZumba={() => {
               setShowQuests(false);
-              handleDirectZumbaWorkout(15);
+              handleDirectZumbaWorkout();
             }}
           />
         )}
@@ -1061,6 +1788,13 @@ export function App() {
             currentGeneration={petState.generation}
             onClose={() => setShowNewPet(false)}
             onConfirmHatch={handleConfirmNewPet}
+          />
+        )}
+
+        {showGuide && (
+          <ManualModal
+            isOpen={showGuide}
+            onClose={() => setShowGuide(false)}
           />
         )}
       </AnimatePresence>
