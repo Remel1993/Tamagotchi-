@@ -22,9 +22,12 @@ export type ChickEmotion =
   | 'sick'        // 🤒 Enfermito / Resfriado
   | 'sad';        // 😢 Triste / Falta de cariño
 
+export type PetSpecies = 'chick' | 'dog';
+
 export interface GraveyardRecord {
   id: string;
   name: string;
+  species?: PetSpecies;
   generation: number;
   stageReached: EvolutionStage;
   stageName: string;
@@ -91,8 +94,10 @@ export interface Achievement {
 }
 
 export interface TamagotchiState {
+  id?: string;
   stage: EvolutionStage;
   name: string;
+  species?: PetSpecies;
   ageDays: number;
   weightGrams: number;
   birthTimestamp: number; // Unix timestamp of creation
@@ -188,3 +193,71 @@ export interface StageConfig {
   startSecond: number;
   endSecond: number;
 }
+
+export interface ThemeStyleConfig {
+  id: DeviceTheme;
+  name: string;
+  body: string;
+  border: string;
+  shadow: string;
+  ring: string;
+  dotColor: string;
+}
+
+export const THEME_CONFIGS: Record<DeviceTheme, ThemeStyleConfig> = {
+  'neon-yellow': {
+    id: 'neon-yellow',
+    name: 'Amarillo Neón',
+    body: 'from-amber-400 via-yellow-400 to-amber-500',
+    border: 'border-yellow-600',
+    shadow: 'shadow-amber-500/30',
+    ring: 'bg-yellow-400',
+    dotColor: '#eab308'
+  },
+  'cyber-purple': {
+    id: 'cyber-purple',
+    name: 'Púrpura Cyber',
+    body: 'from-purple-500 via-fuchsia-500 to-indigo-600',
+    border: 'border-purple-700',
+    shadow: 'shadow-purple-500/30',
+    ring: 'bg-purple-500',
+    dotColor: '#a855f7'
+  },
+  'retro-teal': {
+    id: 'retro-teal',
+    name: 'Teal Retro',
+    body: 'from-teal-400 via-cyan-400 to-emerald-500',
+    border: 'border-teal-600',
+    shadow: 'shadow-teal-500/30',
+    ring: 'bg-teal-400',
+    dotColor: '#2dd4bf'
+  },
+  'coral-pink': {
+    id: 'coral-pink',
+    name: 'Rosa Coral',
+    body: 'from-rose-400 via-pink-400 to-rose-500',
+    border: 'border-pink-600',
+    shadow: 'shadow-pink-500/30',
+    ring: 'bg-rose-400',
+    dotColor: '#fb7185'
+  },
+  'midnight-black': {
+    id: 'midnight-black',
+    name: 'Negro Medianoche',
+    body: 'from-slate-800 via-zinc-900 to-slate-950',
+    border: 'border-slate-700',
+    shadow: 'shadow-slate-900/50',
+    ring: 'bg-slate-800',
+    dotColor: '#334155'
+  },
+  'vintage-white': {
+    id: 'vintage-white',
+    name: 'Blanco Vintage',
+    body: 'from-slate-100 via-stone-200 to-slate-300',
+    border: 'border-slate-400',
+    shadow: 'shadow-slate-300/30',
+    ring: 'bg-slate-200',
+    dotColor: '#cbd5e1'
+  }
+};
+
