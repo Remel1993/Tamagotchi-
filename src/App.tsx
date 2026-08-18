@@ -28,7 +28,12 @@ import {
   Sliders,
   Thermometer,
   Home,
-  ArrowLeft
+  ArrowLeft,
+  Bell,
+  Sun,
+  Sunrise,
+  Sunset,
+  Moon
 } from 'lucide-react';
 import { WelcomeScreen } from './components/WelcomeScreen';
 import { TamagotchiDevice } from './components/TamagotchiDevice';
@@ -39,15 +44,18 @@ import { NewPetModal } from './components/NewPetModal';
 import { ManualModal } from './components/ManualModal';
 import { AchievementsModal } from './components/AchievementsModal';
 import { OwnerHealthModal } from './components/OwnerHealthModal';
+import { NotificationSettingsModal } from './components/NotificationSettingsModal';
 import {
   EvolutionStage,
   TamagotchiState,
+  PetSpecies,
   DeviceTheme,
   DisplayMode,
   GraveyardRecord,
   DailyQuest,
   Achievement,
-  OwnerHabitsState
+  OwnerHabitsState,
+  DayNightTimeOfDay
 } from './types/tamagotchi';
 import {
   loadSavedState,
@@ -63,13 +71,18 @@ import {
   getTodayDateString,
   getDayNightTimeOfDay,
   generateInitialAchievements,
-  getInitialOwnerHabits
+  getInitialOwnerHabits,
+  loadPetSlots,
+  savePetSlots,
+  updatePetInSlots
 } from './services/storage';
 import { soundManager } from './services/soundEffects';
 import { zumbaAudio } from './services/zumbaAudio';
+import { notificationManager } from './services/notifications';
 
 export function App() {
   const [petState, setPetState] = useState<TamagotchiState>(loadSavedState);
+  const [petSlots, setPetSlots] = useState<TamagotchiState[]>(loadPetSlots);
   const [graveyardRecords, setGraveyardRecords] = useState<GraveyardRecord[]>(loadGraveyard);
   const [theme, setTheme] = useState<DeviceTheme>('neon-yellow');
   const [displayMode, setDisplayMode] = useState<DisplayMode>('hd');
@@ -77,14 +90,19 @@ export function App() {
   // Main Screen View (Welcome Screen vs Simulator Device)
   const [currentView, setCurrentView] = useState<'welcome' | 'device'>('welcome');
 
+  // Day / Night Cycle Mode (Auto / Dawn / Day / Sunset / Night)
+  const [timeOfDayMode, setTimeOfDayMode] = useState<'auto' | DayNightTimeOfDay>('auto');
+
   // Modals and Panels visibility
   const [isTopPanelOpen, setIsTopPanelOpen] = useState<boolean>(false);
+  const [isHeaderCollapsed, setIsHeaderCollapsed] = useState<boolean>(false);
   const [showGraveyard, setShowGraveyard] = useState<boolean>(false);
   const [showQuests, setShowQuests] = useState<boolean>(false);
   const [showNewPet, setShowNewPet] = useState<boolean>(false);
   const [showGuide, setShowGuide] = useState<boolean>(false);
   const [showAchievements, setShowAchievements] = useState<boolean>(false);
   const [showOwnerHealth, setShowOwnerHealth] = useState<boolean>(false);
+  const [showNotificationSettings, setShowNotificationSettings] = useState<boolean>(false);
   const [showDevPanel, setShowDevPanel] = useState<boolean>(false);
 
   // Direct Zumba Music State
@@ -113,9 +131,63 @@ export function App() {
     questNeglectTick: 0
   });
 
-  // Save state on changes
+  // Save state on changes and sync with pet slots
   useEffect(() => {
     saveState(petState);
+    updatePetInSlots(petState);
+    setPetSlots(loadPetSlots());
+  }, [petState]);
+
+  // Handler to switch between pets
+  const handleSwitchPet = (targetPet: TamagotchiState) => {
+    soundManager.playHappy();
+    // Save current pet first
+    updatePetInSlots(petState);
+    // Switch to target pet
+    setPetState(targetPet);
+    saveState(targetPet);
+    setPetSlots(loadPetSlots());
+    showRewardNotification(
+      '🔄 Mascota Cambiada',
+      `Ahora estás cuidando a ${targetPet.name} (${targetPet.species === 'dog' ? 'Perrito' : 'Pollito'} Gen ${targetPet.generation}).`,
+      targetPet.species === 'dog' ? '🐶' : '🐣'
+    );
+  };
+
+  // Active Day/Night Cycle
+  const activeTimeOfDay: DayNightTimeOfDay =
+    timeOfDayMode === 'auto' ? getDayNightTimeOfDay() : timeOfDayMode;
+
+  const handleCycleTimeOfDay = () => {
+    soundManager.playSelect();
+    const modes: Array<'auto' | DayNightTimeOfDay> = ['auto', 'dawn', 'day', 'sunset', 'night'];
+    const nextIdx = (modes.indexOf(timeOfDayMode) + 1) % modes.length;
+    const nextMode = modes[nextIdx];
+    setTimeOfDayMode(nextMode);
+
+    const labels: Record<string, string> = {
+      auto: '⏰ Tiempo Real Automático',
+      dawn: '🌅 Amanecer Cálido',
+      day: '☀️ Pleno Día Luminoso',
+      sunset: '🌇 Atardecer Crepuscular',
+      night: '🌙 Noche Estrellada'
+    };
+
+    showRewardNotification(
+      '🌓 Ciclo Día / Noche',
+      `Ambiente visual configurado en: ${labels[nextMode]}`,
+      nextMode === 'night' ? '🌙' : nextMode === 'dawn' ? '🌅' : nextMode === 'sunset' ? '🌇' : '☀️'
+    );
+  };
+
+  // Periodic Duolingo Notification Reminder Check (Every 30s)
+  useEffect(() => {
+    const notifTimer = setInterval(() => {
+      if (!petState.isDead) {
+        notificationManager.checkAndTriggerReminder(petState);
+      }
+    }, 30000);
+    return () => clearInterval(notifTimer);
   }, [petState]);
 
   const showRewardNotification = (title: string, description: string, icon = '🎉') => {
@@ -838,7 +910,7 @@ export function App() {
   };
 
   // Start new pet handler
-  const handleConfirmNewPet = (name: string) => {
+  const handleConfirmNewPet = (name: string, species: PetSpecies = 'chick') => {
     neglectedTimerRef.current = {
       zeroHungerSince: null,
       zeroHappySince: null,
@@ -847,11 +919,15 @@ export function App() {
       questNeglectTick: 0
     };
     const nextGen = petState.generation + 1;
-    const newState = resetToNewEgg(name, nextGen);
+    const newState = resetToNewEgg(name, nextGen, petState.achievements, species);
     setPetState(newState);
     setShowNewPet(false);
     setShowGraveyard(false);
-    showRewardNotification('🥚 ¡Nuevo Huevo Iniciado!', `Generación ${nextGen} iniciada con éxito. ¡A cuidarlo!`, '🐣');
+    showRewardNotification(
+      species === 'dog' ? '🐶 ¡Nuevo Cachorrito Adoptado!' : '🥚 ¡Nuevo Huevo Iniciado!',
+      `Generación ${nextGen} (${species === 'dog' ? 'Perrito' : 'Pollito'}) iniciada con éxito. ¡A cuidarlo!`,
+      species === 'dog' ? '🐶' : '🐣'
+    );
   };
 
   // Fast Dev Simulation handlers (Direct +24 hrs and customizable time jump)
@@ -949,6 +1025,8 @@ export function App() {
           theme={theme}
           displayMode={displayMode}
           isZumbaMusicPlaying={isZumbaMusicPlaying}
+          timeOfDay={activeTimeOfDay}
+          onCycleTimeOfDay={handleCycleTimeOfDay}
           onStartGame={() => {
             soundManager.playStartGame();
             setCurrentView('device');
@@ -959,6 +1037,7 @@ export function App() {
           onOpenGuide={() => setShowGuide(true)}
           onOpenAchievements={() => setShowAchievements(true)}
           onOpenOwnerHealth={() => setShowOwnerHealth(true)}
+          onOpenNotifications={() => setShowNotificationSettings(true)}
           onToggleSleep={handleToggleSleep}
           onDirectZumba={handleDirectZumbaWorkout}
           onToggleTheme={() => {
@@ -966,12 +1045,21 @@ export function App() {
             const nextTheme = themes[(themes.indexOf(theme) + 1) % themes.length];
             setTheme(nextTheme);
           }}
+          onSelectTheme={(selectedTheme) => setTheme(selectedTheme)}
           onToggleSound={handleToggleZumbaMusic}
           onPet={handlePet}
         />
 
         {/* MODALS */}
         <AnimatePresence>
+          {showNotificationSettings && (
+            <NotificationSettingsModal
+              isOpen={showNotificationSettings}
+              onClose={() => setShowNotificationSettings(false)}
+              onShowToast={showRewardNotification}
+            />
+          )}
+
           {showAchievements && (
             <AchievementsModal
               achievements={petState.achievements || generateInitialAchievements()}
@@ -1034,8 +1122,37 @@ export function App() {
     );
   }
 
+  const getDayNightBgClasses = () => {
+    switch (activeTimeOfDay) {
+      case 'dawn':
+        return 'bg-gradient-to-b from-amber-950/30 via-slate-950 to-slate-950';
+      case 'day':
+        return 'bg-gradient-to-b from-sky-950/35 via-blue-950/20 to-slate-950';
+      case 'sunset':
+        return 'bg-gradient-to-b from-rose-950/35 via-purple-950/25 to-slate-950';
+      case 'night':
+        return 'bg-gradient-to-b from-indigo-950/40 via-slate-950/90 to-slate-950';
+    }
+  };
+
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans selection:bg-amber-500 selection:text-slate-950">
+    <div className={`min-h-screen ${getDayNightBgClasses()} text-slate-100 flex flex-col font-sans selection:bg-amber-500 selection:text-slate-950 transition-colors duration-700 relative`}>
+      {/* Dynamic Ambient Sky Glow Overlay tailored to Day/Night */}
+      <div className="absolute inset-0 pointer-events-none overflow-hidden">
+        {activeTimeOfDay === 'night' && (
+          <div className="absolute top-6 right-10 text-indigo-300/30 text-6xl select-none">✨</div>
+        )}
+        {activeTimeOfDay === 'dawn' && (
+          <div className="absolute -top-20 -left-20 w-96 h-96 bg-amber-500/10 rounded-full blur-3xl pointer-events-none" />
+        )}
+        {activeTimeOfDay === 'day' && (
+          <div className="absolute -top-20 right-10 w-96 h-96 bg-sky-400/10 rounded-full blur-3xl pointer-events-none" />
+        )}
+        {activeTimeOfDay === 'sunset' && (
+          <div className="absolute -top-20 left-1/3 w-96 h-96 bg-rose-500/10 rounded-full blur-3xl pointer-events-none" />
+        )}
+      </div>
+
       {/* Top Floating Reward Toast Notification */}
       <AnimatePresence>
         {rewardToast && (
@@ -1060,178 +1177,282 @@ export function App() {
         )}
       </AnimatePresence>
 
-      {/* Top Navigation Bar */}
-      <header className="border-b border-slate-800/80 bg-slate-900/90 backdrop-blur-md sticky top-0 z-30 shadow-md">
-        <div className="max-w-5xl mx-auto px-3 sm:px-4 py-2.5 flex flex-wrap items-center justify-between gap-2.5">
-          {/* Logo & Pet Info */}
-          <div className="flex items-center gap-2.5">
+      {/* Top Navigation Bar with Replegable (Collapsible) Mode for Full Mobile Game Visibility */}
+      <header className="border-b border-slate-800/80 bg-slate-900/95 backdrop-blur-md sticky top-0 z-30 shadow-md transition-all">
+        {isHeaderCollapsed ? (
+          /* Sleek Minimal Collapsed Floating Strip */
+          <div className="max-w-5xl mx-auto px-3 py-1.5 flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => {
+                  soundManager.playSelect();
+                  setCurrentView('welcome');
+                }}
+                className="px-2.5 py-1 rounded-lg font-black bg-gradient-to-r from-amber-400 to-yellow-400 text-slate-950 text-xs flex items-center gap-1 shadow-xs cursor-pointer active:scale-95"
+                title="Volver al Panel Principal"
+              >
+                <ArrowLeft className="w-3.5 h-3.5" />
+                <span>Panel</span>
+              </button>
+              <div className="flex items-center gap-1.5 text-xs font-black">
+                <span>{petState.species === 'dog' ? '🐶' : '🐣'} {petState.name}</span>
+                <span className="text-[10px] font-mono font-bold bg-amber-400/20 text-amber-300 px-1.5 py-0.5 rounded-full">
+                  Día {petState.ageDays}/7
+                </span>
+                <span className="text-[10px] font-bold text-rose-300 bg-rose-950/60 px-1.5 py-0.5 rounded-full border border-rose-500/30">
+                  ❤️ {currentHealth}%
+                </span>
+              </div>
+            </div>
+
+            {/* Replegable Unfold Toggle Button */}
             <button
               onClick={() => {
-                soundManager.playSelect();
-                setCurrentView('welcome');
+                soundManager.playBeep(1100, 0.02);
+                setIsHeaderCollapsed(false);
               }}
-              className="w-9 h-9 rounded-xl bg-gradient-to-tr from-amber-400 to-yellow-500 hover:from-amber-300 flex items-center justify-center text-xl shadow-md shadow-amber-500/20 cursor-pointer transition-all active:scale-95"
-              title="Volver a la Pantalla de Inicio"
+              className="flex items-center gap-1 px-3 py-1 rounded-xl font-black bg-amber-400 hover:bg-amber-300 text-slate-950 text-xs shadow-md shadow-amber-400/20 transition-all cursor-pointer active:scale-95 animate-pulse"
+              title="Desplegar barra de opciones, zumba, retos y panel superior"
             >
-              🐣
+              <ChevronDown className="w-4 h-4 stroke-[3]" />
+              <span>Desplegar Menú</span>
             </button>
-            <div>
-              <h1 className="text-sm sm:text-base font-black tracking-tight flex items-center gap-1.5">
-                {petState.name}
-                <span className="text-[10px] uppercase font-bold bg-amber-400/20 text-amber-300 border border-amber-400/30 px-1.5 py-0.5 rounded-full">
-                  Gen {petState.generation} • Día {petState.ageDays}/7
-                </span>
-                <span className={`text-[10px] uppercase font-bold px-1.5 py-0.5 rounded-full border ${
-                  getDayNightTimeOfDay() === 'night'
-                    ? 'bg-indigo-950/80 text-indigo-300 border-indigo-500/40'
-                    : getDayNightTimeOfDay() === 'dawn'
-                    ? 'bg-orange-950/80 text-amber-300 border-amber-500/40'
-                    : getDayNightTimeOfDay() === 'afternoon'
-                    ? 'bg-rose-950/80 text-rose-300 border-rose-500/40'
-                    : 'bg-cyan-950/80 text-cyan-300 border-cyan-500/40'
-                }`}>
-                  {getDayNightTimeOfDay() === 'night' ? '🌙 Noche' : getDayNightTimeOfDay() === 'dawn' ? '🌅 Amanecer' : getDayNightTimeOfDay() === 'afternoon' ? '🌇 Atardecer' : '☀️ Día'}
-                </span>
-              </h1>
-              <p className="text-[11px] text-slate-400">
-                {STAGES_CONFIG[petState.stage]?.name || 'Tamagotchi 7 Días'}
-              </p>
+          </div>
+        ) : (
+          /* Full Expanded Header with Fold Button */
+          <div className="max-w-5xl mx-auto px-3 sm:px-4 py-2 flex flex-wrap items-center justify-between gap-2">
+            {/* Logo & Pet Info */}
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => {
+                  soundManager.playSelect();
+                  setCurrentView('welcome');
+                }}
+                className="w-8 h-8 rounded-xl bg-gradient-to-tr from-amber-400 to-yellow-500 hover:from-amber-300 flex items-center justify-center text-lg shadow-md shadow-amber-500/20 cursor-pointer transition-all active:scale-95 shrink-0"
+                title="Volver a la Pantalla de Inicio"
+              >
+                {petState.species === 'dog' ? '🐶' : '🐣'}
+              </button>
+              <div>
+                <h1 className="text-xs sm:text-sm font-black tracking-tight flex items-center gap-1.5 flex-wrap">
+                  {petState.name}
+                  <span className="text-[9px] sm:text-[10px] uppercase font-bold bg-amber-400/20 text-amber-300 border border-amber-400/30 px-1.5 py-0.5 rounded-full">
+                    Gen {petState.generation} • Día {petState.ageDays}/7
+                  </span>
+                  {/* Clickable Day/Night pill */}
+                  <button
+                    onClick={handleCycleTimeOfDay}
+                    className={`text-[9px] uppercase font-bold px-1.5 py-0.5 rounded-full border transition-all cursor-pointer hover:opacity-90 active:scale-95 flex items-center gap-1 ${
+                      activeTimeOfDay === 'night'
+                        ? 'bg-indigo-950/80 text-indigo-300 border-indigo-500/40'
+                        : activeTimeOfDay === 'dawn'
+                        ? 'bg-orange-950/80 text-amber-300 border-amber-500/40'
+                        : activeTimeOfDay === 'sunset'
+                        ? 'bg-rose-950/80 text-rose-300 border-rose-500/40'
+                        : 'bg-cyan-950/80 text-cyan-300 border-cyan-500/40'
+                    }`}
+                    title="Cambiar Ciclo Día / Noche Visual"
+                  >
+                    <span>
+                      {activeTimeOfDay === 'night' ? '🌙 Noche' : activeTimeOfDay === 'dawn' ? '🌅 Amanecer' : activeTimeOfDay === 'sunset' ? '🌇 Atardecer' : '☀️ Día'}
+                    </span>
+                  </button>
+                </h1>
+              </div>
+            </div>
+
+            {/* Quick Action Buttons in Top Bar */}
+            <div className="flex flex-wrap items-center gap-1.5 text-xs">
+              {/* PET SWITCHER / ADOPT BUTTON IN HEADER */}
+              <button
+                onClick={() => {
+                  soundManager.playSelect();
+                  if (petSlots.length > 1) {
+                    const currentIndex = petSlots.findIndex(
+                      (p) => (p.id && p.id === petState.id) || (p.species === petState.species && p.generation === petState.generation)
+                    );
+                    const nextPet = petSlots[(currentIndex + 1) % petSlots.length];
+                    handleSwitchPet(nextPet);
+                  } else {
+                    setShowNewPet(true);
+                  }
+                }}
+                className="flex items-center gap-1.5 px-3 py-1 rounded-xl font-black bg-gradient-to-r from-amber-400 via-orange-400 to-amber-500 hover:from-amber-300 text-slate-950 shadow-md shadow-amber-500/25 transition-all cursor-pointer active:scale-95 text-xs border border-amber-300 ring-1 ring-amber-400/50"
+                title={petSlots.length > 1 ? `Alternar a la siguiente mascota (${petSlots.length} activas)` : 'Adoptar otra mascota para alternar'}
+              >
+                <span className="text-sm">{petState.species === 'dog' ? '🐶' : '🐣'}</span>
+                <span>{petSlots.length > 1 ? 'Alternar Mascota 🔄' : '+ Otra Mascota'}</span>
+              </button>
+
+              {/* VOLVER AL PANEL PRINCIPAL BUTTON */}
+              <button
+                onClick={() => {
+                  soundManager.playSelect();
+                  setCurrentView('welcome');
+                }}
+                className="flex items-center gap-1 px-2.5 py-1 rounded-xl font-black bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 transition-all cursor-pointer active:scale-95 text-xs"
+                title="Regresar al Panel Principal de Bienvenida"
+              >
+                <ArrowLeft className="w-3.5 h-3.5 stroke-[3]" />
+                <span>Panel</span>
+              </button>
+
+              {/* DORMIR / DESPERTAR LIBREMENTE BUTTON */}
+              <button
+                onClick={handleToggleSleep}
+                className={`flex items-center gap-1 px-2 py-1 rounded-xl font-black border transition-all cursor-pointer active:scale-95 shadow-md ${
+                  petState.isSleeping
+                    ? 'bg-indigo-900/90 hover:bg-indigo-800 text-indigo-200 border-indigo-400'
+                    : 'bg-slate-800 hover:bg-slate-700 text-slate-200 border-slate-600'
+                }`}
+                title={petState.isSleeping ? 'Despertar ahora mismo' : 'Poner a dormir ahora'}
+              >
+                <span>{petState.isSleeping ? '☀️ Despertar' : '💤 Dormir'}</span>
+              </button>
+
+              {/* DUOLINGO NOTIFICATIONS BUTTON */}
+              <button
+                onClick={() => {
+                  soundManager.playSelect();
+                  setShowNotificationSettings(true);
+                }}
+                className="flex items-center gap-1 px-2 py-1 rounded-xl font-bold bg-emerald-950/80 hover:bg-emerald-900 border border-emerald-500/50 text-emerald-300 shadow-md transition-all cursor-pointer active:scale-95"
+                title="Configurar Notificaciones Estilo Duolingo"
+              >
+                <Bell className="w-3.5 h-3.5 fill-current" />
+                <span className="hidden sm:inline">Alertas</span>
+              </button>
+
+              {/* DIRECT +24 HRS SIMULATION BUTTON */}
+              <button
+                onClick={() => handleAdvanceDay(1)}
+                className="flex items-center gap-1 px-2 py-1 rounded-xl font-black bg-gradient-to-r from-cyan-500 via-teal-400 to-cyan-400 hover:from-cyan-400 hover:to-teal-300 text-slate-950 shadow-md shadow-cyan-500/20 transition-all cursor-pointer active:scale-95 text-xs"
+                title="Avanzar 24 Horas (+1 Día) para simular el ciclo de crecimiento"
+              >
+                <FastForward className="w-3.5 h-3.5 fill-current" />
+                <span>+24h</span>
+              </button>
+
+              {/* DIRECT 1-CLICK ZUMBA REWARD BUTTON */}
+              <button
+                onClick={() => handleDirectZumbaWorkout()}
+                disabled={petState.zumbaCompletedDate === getTodayDateString()}
+                className={`flex items-center gap-1 px-2 py-1 rounded-xl font-black shadow-md transition-all cursor-pointer active:scale-95 text-xs ${
+                  petState.zumbaCompletedDate === getTodayDateString()
+                    ? 'bg-slate-800 text-slate-400 border border-slate-700 cursor-not-allowed opacity-85'
+                    : (petState.zumbaTimerRemainingSeconds || 0) > 0
+                    ? 'bg-gradient-to-r from-amber-500 to-orange-500 text-slate-950 shadow-amber-500/30 animate-pulse'
+                    : 'bg-gradient-to-r from-rose-500 via-amber-500 to-yellow-500 hover:from-rose-400 hover:to-yellow-400 text-slate-950 shadow-rose-500/20'
+                }`}
+                title={
+                  petState.zumbaCompletedDate === getTodayDateString()
+                    ? 'Ya completaste la sesión de Zumba hoy. Vuelve mañana.'
+                    : (petState.zumbaTimerRemainingSeconds || 0) > 0
+                    ? `Temporizador activo: restan ${Math.floor((petState.zumbaTimerRemainingSeconds || 0) / 60)}m ${((petState.zumbaTimerRemainingSeconds || 0) % 60)}s`
+                    : 'Iniciar sesión de Zumba (20 min). Al finalizar otorga +1 Día de crecimiento y +35% salud.'
+                }
+              >
+                <Flame className="w-3.5 h-3.5 fill-current" />
+                {petState.zumbaCompletedDate === getTodayDateString() ? (
+                  <span>✅ Zumba</span>
+                ) : (petState.zumbaTimerRemainingSeconds || 0) > 0 ? (
+                  <span>
+                    ⏳ {Math.floor((petState.zumbaTimerRemainingSeconds || 0) / 60)}:
+                    {String((petState.zumbaTimerRemainingSeconds || 0) % 60).padStart(2, '0')}
+                  </span>
+                ) : (
+                  <span>💃 Zumba</span>
+                )}
+              </button>
+
+              {/* Cementerio Button */}
+              <button
+                onClick={() => {
+                  soundManager.playSelect();
+                  setShowGraveyard(true);
+                }}
+                className="flex items-center gap-1 px-2 py-1 rounded-xl font-bold bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 shadow-xs transition-all cursor-pointer active:scale-95"
+              >
+                <span>🪦</span>
+                <span className="hidden sm:inline">Cementerio</span>
+                <span>({graveyardRecords.length})</span>
+              </button>
+
+              {/* Daily Quests Button */}
+              <button
+                onClick={() => {
+                  soundManager.playSelect();
+                  setShowQuests(true);
+                }}
+                className="relative flex items-center gap-1 px-2 py-1 rounded-xl font-bold bg-slate-800 hover:bg-slate-700 text-emerald-400 border border-emerald-500/40 shadow-xs transition-all cursor-pointer active:scale-95"
+              >
+                <span>🎯</span>
+                <span className="hidden sm:inline">Retos</span>
+                <span>({completedQuestsCount}/5)</span>
+                {completedQuestsCount > 0 && (
+                  <span className="absolute -top-1 -right-1 w-2 h-2 bg-emerald-400 rounded-full animate-ping" />
+                )}
+              </button>
+
+              {/* Logros Button */}
+              <button
+                onClick={() => {
+                  soundManager.playSelect();
+                  setShowAchievements(true);
+                }}
+                className="flex items-center gap-1 px-2 py-1 rounded-xl font-bold bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border border-amber-400/30 shadow-xs transition-all cursor-pointer active:scale-95"
+                title="Ver Sistema de Logros Desbloqueables"
+              >
+                <span>🏆</span>
+                <span className="hidden sm:inline">Logros</span>
+              </button>
+
+              {/* Hábitos del Dueño Button */}
+              <button
+                onClick={() => {
+                  soundManager.playSelect();
+                  setShowOwnerHealth(true);
+                }}
+                className="flex items-center gap-1 px-2 py-1 rounded-xl font-bold bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-300 border border-cyan-400/30 shadow-xs transition-all cursor-pointer active:scale-95"
+                title="Registrar Hidratación, Medicación y Rutina de Sueño"
+              >
+                <span>💧</span>
+                <span className="hidden sm:inline">Hábitos</span>
+              </button>
+
+              {/* DESPLEGABLE / COLLAPSIBLE TOP PANEL TOGGLE BUTTON */}
+              <button
+                onClick={() => {
+                  soundManager.playBeep(900, 0.02);
+                  setIsTopPanelOpen(!isTopPanelOpen);
+                }}
+                className={`flex items-center gap-1 px-2 py-1 rounded-xl font-black text-xs border transition-all cursor-pointer active:scale-95 ${
+                  isTopPanelOpen
+                    ? 'bg-amber-400 text-slate-950 border-amber-300 shadow-md shadow-amber-400/20'
+                    : 'bg-slate-800 text-slate-200 border-slate-700 hover:bg-slate-700'
+                }`}
+                title={isTopPanelOpen ? 'Ocultar panel superior de cuidador' : 'Desplegar panel superior de cuidador y simulación'}
+              >
+                <Sliders className="w-3.5 h-3.5" />
+                <span className="hidden md:inline">Panel Cuidador</span>
+                {isTopPanelOpen ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+              </button>
+
+              {/* REPLEGAR PESTAÑA / OCULTAR MENÚ PARA VER EL JUEGO COMPLETO */}
+              <button
+                onClick={() => {
+                  soundManager.playBeep(800, 0.02);
+                  setIsHeaderCollapsed(true);
+                }}
+                className="flex items-center gap-1 px-2.5 py-1 rounded-xl font-black text-xs bg-slate-800 hover:bg-slate-700 text-amber-300 border border-amber-500/40 shadow-sm transition-all cursor-pointer active:scale-95"
+                title="Replegar esta barra superior para ver el juego en pantalla completa"
+              >
+                <ChevronUp className="w-3.5 h-3.5 stroke-[2.5]" />
+                <span className="hidden xs:inline">Replegar</span>
+              </button>
             </div>
           </div>
-
-          {/* Quick Action Buttons in Top Bar */}
-          <div className="flex flex-wrap items-center gap-2 text-xs">
-            {/* VOLVER AL PANEL PRINCIPAL BUTTON */}
-            <button
-              onClick={() => {
-                soundManager.playSelect();
-                setCurrentView('welcome');
-              }}
-              className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl font-black bg-gradient-to-r from-amber-400 via-yellow-400 to-amber-500 hover:from-amber-300 hover:to-yellow-300 text-slate-950 shadow-md shadow-amber-500/30 transition-all cursor-pointer active:scale-95 text-xs border border-yellow-200"
-              title="Regresar al Panel Principal de Bienvenida"
-            >
-              <ArrowLeft className="w-4 h-4 stroke-[3]" />
-              <span>Volver al Panel</span>
-            </button>
-            {/* DIRECT +24 HRS SIMULATION BUTTON */}
-            <button
-              onClick={() => handleAdvanceDay(1)}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl font-black bg-gradient-to-r from-cyan-500 via-teal-400 to-cyan-400 hover:from-cyan-400 hover:to-teal-300 text-slate-950 shadow-md shadow-cyan-500/20 transition-all cursor-pointer active:scale-95 text-xs animate-pulse"
-              title="Avanzar 24 Horas (+1 Día) para simular el ciclo de crecimiento"
-            >
-              <FastForward className="w-3.5 h-3.5 fill-current" />
-              <span>+24 hrs</span>
-            </button>
-
-            {/* DIRECT 1-CLICK ZUMBA REWARD BUTTON (WITH 20-MIN TIMER AND 1-PER-DAY LOCK) */}
-            <button
-              onClick={() => handleDirectZumbaWorkout()}
-              disabled={petState.zumbaCompletedDate === getTodayDateString()}
-              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl font-black shadow-md transition-all cursor-pointer active:scale-95 text-xs ${
-                petState.zumbaCompletedDate === getTodayDateString()
-                  ? 'bg-slate-800 text-slate-400 border border-slate-700 cursor-not-allowed opacity-85'
-                  : (petState.zumbaTimerRemainingSeconds || 0) > 0
-                  ? 'bg-gradient-to-r from-amber-500 to-orange-500 text-slate-950 shadow-amber-500/30 animate-pulse'
-                  : 'bg-gradient-to-r from-rose-500 via-amber-500 to-yellow-500 hover:from-rose-400 hover:to-yellow-400 text-slate-950 shadow-rose-500/20'
-              }`}
-              title={
-                petState.zumbaCompletedDate === getTodayDateString()
-                  ? 'Ya completaste la sesión de Zumba hoy. Vuelve mañana.'
-                  : (petState.zumbaTimerRemainingSeconds || 0) > 0
-                  ? `Temporizador activo: restan ${Math.floor((petState.zumbaTimerRemainingSeconds || 0) / 60)}m ${((petState.zumbaTimerRemainingSeconds || 0) % 60)}s`
-                  : 'Iniciar sesión de Zumba (20 min). Al finalizar otorga +1 Día de crecimiento y +35% salud.'
-              }
-            >
-              <Flame className="w-3.5 h-3.5 fill-current" />
-              {petState.zumbaCompletedDate === getTodayDateString() ? (
-                <span>✅ Zumba Lista</span>
-              ) : (petState.zumbaTimerRemainingSeconds || 0) > 0 ? (
-                <span>
-                  ⏳ {Math.floor((petState.zumbaTimerRemainingSeconds || 0) / 60)}:
-                  {String((petState.zumbaTimerRemainingSeconds || 0) % 60).padStart(2, '0')}
-                </span>
-              ) : (
-                <>
-                  <span className="hidden sm:inline">💃 Zumba (20m)</span>
-                  <span className="sm:hidden">💃 Zumba</span>
-                </>
-              )}
-            </button>
-
-            {/* Cementerio Button */}
-            <button
-              onClick={() => {
-                soundManager.playSelect();
-                setShowGraveyard(true);
-              }}
-              className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl font-bold bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 shadow-xs transition-all cursor-pointer active:scale-95"
-            >
-              <span>🪦</span>
-              <span className="hidden sm:inline">Cementerio</span>
-              <span>({graveyardRecords.length})</span>
-            </button>
-
-            {/* Daily Quests Button */}
-            <button
-              onClick={() => {
-                soundManager.playSelect();
-                setShowQuests(true);
-              }}
-              className="relative flex items-center gap-1 px-2.5 py-1.5 rounded-xl font-bold bg-slate-800 hover:bg-slate-700 text-emerald-400 border border-emerald-500/40 shadow-xs transition-all cursor-pointer active:scale-95"
-            >
-              <span>🎯</span>
-              <span className="hidden sm:inline">Retos</span>
-              <span>({completedQuestsCount}/5)</span>
-              {completedQuestsCount > 0 && (
-                <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-emerald-400 rounded-full animate-ping" />
-              )}
-            </button>
-
-            {/* Logros (Achievements) Button */}
-            <button
-              onClick={() => {
-                soundManager.playSelect();
-                setShowAchievements(true);
-              }}
-              className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl font-bold bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border border-amber-400/30 shadow-xs transition-all cursor-pointer active:scale-95"
-              title="Ver Sistema de Logros Desbloqueables"
-            >
-              <span>🏆</span>
-              <span className="hidden sm:inline">Logros</span>
-            </button>
-
-            {/* Hábitos del Dueño Button */}
-            <button
-              onClick={() => {
-                soundManager.playSelect();
-                setShowOwnerHealth(true);
-              }}
-              className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl font-bold bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-300 border border-cyan-400/30 shadow-xs transition-all cursor-pointer active:scale-95"
-              title="Registrar Hidratación, Medicación y Rutina de Sueño"
-            >
-              <span>💧</span>
-              <span className="hidden sm:inline">Hábitos</span>
-            </button>
-
-            {/* DESPLEGABLE / COLLAPSIBLE TOP PANEL TOGGLE BUTTON */}
-            <button
-              onClick={() => {
-                soundManager.playBeep(900, 0.02);
-                setIsTopPanelOpen(!isTopPanelOpen);
-              }}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl font-black text-xs border transition-all cursor-pointer active:scale-95 ${
-                isTopPanelOpen
-                  ? 'bg-amber-400 text-slate-950 border-amber-300 shadow-md shadow-amber-400/20'
-                  : 'bg-slate-800 text-slate-200 border-slate-700 hover:bg-slate-700'
-              }`}
-              title={isTopPanelOpen ? 'Ocultar panel superior de cuidador' : 'Desplegar panel superior de cuidador y simulación'}
-            >
-              <Sliders className="w-3.5 h-3.5" />
-              <span className="hidden xs:inline">Panel Cuidador</span>
-              {isTopPanelOpen ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
-            </button>
-          </div>
-        </div>
+        )}
 
         {/* EXPANDABLE COLLAPSIBLE TOP PANEL DRAWER */}
         <AnimatePresence>
@@ -1519,7 +1740,58 @@ export function App() {
             <FastForward className="w-3 h-3 fill-current" />
             <span>+24h</span>
           </button>
+
+          {/* Add New Pet Shortcut */}
+          <button
+            onClick={() => {
+              soundManager.playSelect();
+              setShowNewPet(true);
+            }}
+            className="flex items-center gap-1 px-3 py-1.5 rounded-full bg-emerald-950/80 hover:bg-emerald-900 border border-emerald-500/50 text-emerald-300 text-xs font-black shadow-md transition-all cursor-pointer active:scale-95"
+            title="Adoptar otra mascota (Perrito o Pollito) y alternar entre ellas"
+          >
+            <Plus className="w-3.5 h-3.5" />
+            <span>+ Mascota</span>
+          </button>
         </div>
+
+        {/* Multi-Pet Switching Bar (Visible if 2+ pets exist or can toggle) */}
+        {petSlots.length > 1 && (
+          <motion.div
+            initial={{ opacity: 0, y: -8 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="w-full max-w-md bg-slate-900/90 border border-amber-400/30 rounded-2xl p-2.5 shadow-lg flex flex-col gap-1.5"
+          >
+            <div className="flex items-center justify-between text-[11px] font-black text-amber-300 px-1">
+              <span>🐾 Alternar entre Mascotas ({petSlots.length} activas):</span>
+              <span className="text-[10px] text-slate-400 font-mono font-normal">Toca para cambiar</span>
+            </div>
+            <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none">
+              {petSlots.map((slot, idx) => {
+                const isSelected = (slot.id && slot.id === petState.id) || (slot.species === petState.species && slot.generation === petState.generation);
+                return (
+                  <button
+                    key={slot.id || `slot-${idx}`}
+                    onClick={() => handleSwitchPet(slot)}
+                    className={`flex items-center gap-2 px-3 py-1.5 rounded-xl border text-xs font-bold transition-all cursor-pointer shrink-0 ${
+                      isSelected
+                        ? 'bg-amber-400 text-slate-950 border-amber-300 shadow-md shadow-amber-400/25 font-black scale-102 ring-2 ring-amber-300/60'
+                        : 'bg-slate-800/90 hover:bg-slate-700 text-slate-200 border-slate-700'
+                    }`}
+                  >
+                    <span className="text-base">{slot.species === 'dog' ? '🐶' : '🐣'}</span>
+                    <div className="text-left leading-tight">
+                      <div className="text-xs truncate max-w-[100px]">{slot.name}</div>
+                      <div className={`text-[9px] font-mono ${isSelected ? 'text-slate-900' : 'text-slate-400'}`}>
+                        Día {slot.ageDays} • ❤️ {slot.healthPercent ?? 100}%
+                      </div>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          </motion.div>
+        )}
 
         {/* The Physical Tamagotchi Device with LCD and exact chick art */}
         <TamagotchiDevice
@@ -1537,16 +1809,17 @@ export function App() {
           onMiniGameComplete={handleMiniGameComplete}
           onResetNewEgg={() => setShowNewPet(true)}
           onPet={handlePet}
+          hasMultiplePets={petSlots.length > 1}
         />
 
-        {/* EGG VITAL WARMTH & INCUBATION MONITOR (Shows clearly how the egg absorbs warmth and avoids freezing) */}
-        {petState.stage < EvolutionStage.BABY_CHICK && (
+        {/* EGG VITAL WARMTH & INCUBATION / DOG HEALTH & NUTRITION MONITOR */}
+        {(petState.species === 'dog' || petState.stage < EvolutionStage.BABY_CHICK) && (
           <motion.div
             initial={{ opacity: 0, y: 15 }}
             animate={{ opacity: 1, y: 0 }}
             className="w-full max-w-2xl bg-gradient-to-b from-slate-900/95 to-slate-950/95 border-2 border-amber-500/40 rounded-3xl p-4 sm:p-5 shadow-2xl space-y-3.5"
           >
-            {/* Header with Temperature Gauge */}
+            {/* Header with Temperature / Vital Gauge */}
             <div className="flex flex-wrap items-center justify-between gap-2 pb-3 border-b border-amber-500/20">
               <div className="flex items-center gap-2.5">
                 <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-amber-500 to-rose-500 flex items-center justify-center text-xl shadow-lg shadow-amber-500/30">
@@ -1554,13 +1827,19 @@ export function App() {
                 </div>
                 <div>
                   <h2 className="text-sm sm:text-base font-black text-amber-300 flex items-center gap-2">
-                    <span>Monitor de Calor Vital e Incubación</span>
+                    <span>
+                      {petState.species === 'dog'
+                        ? 'Monitor de Calor Vital & Alimentación'
+                        : 'Monitor de Calor Vital e Incubación'}
+                    </span>
                     <span className="text-[10px] bg-amber-400/20 text-amber-200 border border-amber-400/30 px-2 py-0.5 rounded-full font-mono">
                       Día {petState.ageDays}/7
                     </span>
                   </h2>
                   <p className="text-[11px] text-slate-300">
-                    Temperatura térmica del huevo: <span className="font-bold text-amber-400 font-mono">{(36.0 + (currentHealth / 100) * 2.2).toFixed(1)}°C</span> ({currentHealth}% Calor Vital)
+                    {petState.species === 'dog'
+                      ? `Vitalidad y energía del cachorro: ${currentHealth}% Salud (${(37.5 + (currentHealth / 100) * 1.5).toFixed(1)}°C corporal)`
+                      : `Temperatura térmica del huevo: ${(36.0 + (currentHealth / 100) * 2.2).toFixed(1)}°C (${currentHealth}% Calor Vital)`}
                   </p>
                 </div>
               </div>
@@ -1575,16 +1854,22 @@ export function App() {
                     : 'bg-rose-500/25 text-rose-300 border-rose-500/50 animate-bounce'
                 }`}
               >
-                {currentHealth > 70 ? '🔥 Nido Cálido & Saludable' : currentHealth > 40 ? '♨️ Temperatura Estable' : '❄️ ¡PELIGRO DE FRÍO!'}
+                {currentHealth > 70
+                  ? petState.species === 'dog' ? '🐶 Salud Óptima & Enérgico' : '🔥 Nido Cálido & Saludable'
+                  : currentHealth > 40
+                  ? petState.species === 'dog' ? '🍖 Vitalidad Estable' : '♨️ Temperatura Estable'
+                  : petState.species === 'dog' ? '⚠️ ¡ATENCIÓN URGENTE!' : '❄️ ¡PELIGRO DE FRÍO!'}
               </span>
             </div>
 
             {/* Visual Temperature Meter Bar */}
             <div className="space-y-1">
               <div className="flex items-center justify-between text-[10px] font-mono font-bold text-slate-400">
-                <span>❄️ 35.0°C (Crítico)</span>
-                <span className="text-amber-300 font-black">🌡️ Rango Óptimo: 37.0°C - 38.2°C</span>
-                <span>🔥 38.5°C (Máx)</span>
+                <span>{petState.species === 'dog' ? '❤️ 0% (Crítico)' : '❄️ 35.0°C (Crítico)'}</span>
+                <span className="text-amber-300 font-black">
+                  {petState.species === 'dog' ? '🐾 Rango Óptimo: 70% - 100%' : '🌡️ Rango Óptimo: 37.0°C - 38.2°C'}
+                </span>
+                <span>{petState.species === 'dog' ? '🍖 100% (Máx)' : '🔥 38.5°C (Máx)'}</span>
               </div>
               <div className="w-full h-3.5 bg-slate-950 rounded-full p-0.5 border border-amber-500/30 overflow-hidden shadow-inner">
                 <motion.div
@@ -1600,10 +1885,12 @@ export function App() {
               </div>
             </div>
 
-            {/* 4 Interactive Sources of Vital Warmth (DÓNDE ABSORBE CALOR EL HUEVO) */}
+            {/* 4 Interactive Sources of Vital Warmth / Dog Nutrition */}
             <div className="space-y-2 pt-1">
               <span className="text-[11px] font-black text-slate-300 uppercase tracking-wider block">
-                ¿Dónde y cómo absorbe calor el huevo para no morir de frío?
+                {petState.species === 'dog'
+                  ? '¿Cómo cuidar la vitalidad y felicidad de tu perrito?'
+                  : '¿Dónde y cómo absorbe calor el huevo para no morir de frío?'}
               </span>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
                 {/* 1. Caricias */}
@@ -1613,27 +1900,35 @@ export function App() {
                 >
                   <div className="flex items-center gap-2 mb-1">
                     <span className="text-lg group-hover:scale-110 transition-transform">🤲</span>
-                    <span className="font-black text-xs text-amber-300">1. Caricias al Cascarón</span>
+                    <span className="font-black text-xs text-amber-300">
+                      {petState.species === 'dog' ? '1. Mimos y Acariciar' : '1. Caricias al Cascarón'}
+                    </span>
                     <span className="ml-auto text-[9px] font-mono font-bold bg-amber-400/15 text-amber-300 px-1.5 py-0.2 rounded">
-                      +3% Calor
+                      +3% Salud
                     </span>
                   </div>
                   <p className="text-[11px] text-slate-300 leading-snug">
-                    Toca el huevo en la pantalla LCD o haz clic aquí. Transfiere calor biológico directo de tus manos.
+                    {petState.species === 'dog'
+                      ? 'Toca al perrito en la pantalla o haz clic aquí para darle afecto (+3% Salud y felicidad).'
+                      : 'Toca el huevo en la pantalla LCD o haz clic aquí. Transfiere calor biológico directo de tus manos.'}
                   </p>
                 </div>
 
-                {/* 2. Minijuegos */}
+                {/* 2. Minijuegos / Alimentación */}
                 <div className="p-3 rounded-2xl bg-slate-950/70 border border-amber-500/30">
                   <div className="flex items-center gap-2 mb-1">
-                    <span className="text-lg">🎮</span>
-                    <span className="font-black text-xs text-amber-300">2. Minijuegos de Destreza</span>
+                    <span className="text-lg">{petState.species === 'dog' ? '🍖' : '🎮'}</span>
+                    <span className="font-black text-xs text-amber-300">
+                      {petState.species === 'dog' ? '2. Alimentación & Minijuegos' : '2. Minijuegos de Destreza'}
+                    </span>
                     <span className="ml-auto text-[9px] font-mono font-bold bg-amber-400/15 text-amber-300 px-1.5 py-0.2 rounded">
-                      +15% Calor
+                      +15% Salud
                     </span>
                   </div>
                   <p className="text-[11px] text-slate-300 leading-snug">
-                    Juega en el botón 🎮 del Tamagotchi. La fricción y victorias térmicas aceleran 30 min la incubación.
+                    {petState.species === 'dog'
+                      ? 'Aliméntalo con croquetas (🍖) o premios (🦴) desde el menú del Tamagotchi y juega a atrapar chispas.'
+                      : 'Juega en el botón 🎮 del Tamagotchi. La fricción y victorias térmicas aceleran 30 min la incubación.'}
                   </p>
                 </div>
 
@@ -1646,11 +1941,13 @@ export function App() {
                     <span className="text-lg group-hover:scale-110 transition-transform">💃</span>
                     <span className="font-black text-xs text-rose-300">3. Sesión Zumba 20 min</span>
                     <span className="ml-auto text-[9px] font-mono font-bold bg-rose-500/20 text-rose-300 px-1.5 py-0.2 rounded">
-                      +35% Calor & +24h
+                      +35% Salud & +24h
                     </span>
                   </div>
                   <p className="text-[11px] text-slate-300 leading-snug">
-                    Tu entrenamiento genera calor masivo que calienta el nido y avanza 1 día completo de incubación.
+                    {petState.species === 'dog'
+                      ? 'Entrena con tu mascota para llenar su vitalidad y avanzar su crecimiento diario.'
+                      : 'Tu entrenamiento genera calor masivo que calienta el nido y avanza 1 día completo de incubación.'}
                   </p>
                 </div>
 
@@ -1661,13 +1958,17 @@ export function App() {
                 >
                   <div className="flex items-center gap-2 mb-1">
                     <span className="text-lg">🪺</span>
-                    <span className="font-black text-xs text-emerald-300">4. Retos del Nido & Sueño</span>
+                    <span className="font-black text-xs text-emerald-300">
+                      {petState.species === 'dog' ? '4. Retos Diarios & Descanso' : '4. Retos del Nido & Sueño'}
+                    </span>
                     <span className="ml-auto text-[9px] font-mono font-bold bg-emerald-500/20 text-emerald-300 px-1.5 py-0.2 rounded">
-                      Aislante Térmico
+                      Vitalidad Óptima
                     </span>
                   </div>
                   <p className="text-[11px] text-slate-300 leading-snug">
-                    Cumplir los 5 retos diarios y apagar la luz para que duerma 8h conserva el calor del nido.
+                    {petState.species === 'dog'
+                      ? 'Cumplir los 5 retos diarios y apagar la luz para que duerma mantiene al perrito saludable y activo.'
+                      : 'Cumplir los 5 retos diarios y apagar la luz para que duerma 8h conserva el calor del nido.'}
                   </p>
                 </div>
               </div>
@@ -1788,6 +2089,14 @@ export function App() {
             currentGeneration={petState.generation}
             onClose={() => setShowNewPet(false)}
             onConfirmHatch={handleConfirmNewPet}
+          />
+        )}
+
+        {showNotificationSettings && (
+          <NotificationSettingsModal
+            isOpen={showNotificationSettings}
+            onClose={() => setShowNotificationSettings(false)}
+            onShowToast={showRewardNotification}
           />
         )}
 
