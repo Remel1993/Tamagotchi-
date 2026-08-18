@@ -21,7 +21,8 @@ import {
   Moon,
   Sun,
   Sunrise,
-  Sunset
+  Sunset,
+  Bell
 } from 'lucide-react';
 import {
   TamagotchiState,
@@ -29,7 +30,8 @@ import {
   DeviceTheme,
   DisplayMode,
   GraveyardRecord,
-  DayNightTimeOfDay
+  DayNightTimeOfDay,
+  THEME_CONFIGS
 } from '../types/tamagotchi';
 import { STAGES_CONFIG, getDayNightTimeOfDay } from '../services/storage';
 import { soundManager } from '../services/soundEffects';
@@ -41,6 +43,8 @@ interface WelcomeScreenProps {
   theme: DeviceTheme;
   displayMode: DisplayMode;
   isZumbaMusicPlaying: boolean;
+  timeOfDay?: DayNightTimeOfDay;
+  onCycleTimeOfDay?: () => void;
   onStartGame: () => void;
   onOpenGraveyard: () => void;
   onOpenQuests: () => void;
@@ -48,9 +52,11 @@ interface WelcomeScreenProps {
   onOpenGuide: () => void;
   onOpenAchievements: () => void;
   onOpenOwnerHealth: () => void;
+  onOpenNotifications: () => void;
   onToggleSleep: () => void;
   onDirectZumba: () => void;
   onToggleTheme: () => void;
+  onSelectTheme?: (theme: DeviceTheme) => void;
   onToggleSound: () => void;
   onPet: () => void;
 }
@@ -61,6 +67,8 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({
   theme,
   displayMode,
   isZumbaMusicPlaying,
+  timeOfDay: externalTimeOfDay,
+  onCycleTimeOfDay,
   onStartGame,
   onOpenGraveyard,
   onOpenQuests,
@@ -68,23 +76,27 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({
   onOpenGuide,
   onOpenAchievements,
   onOpenOwnerHealth,
+  onOpenNotifications,
   onToggleSleep,
   onDirectZumba,
   onToggleTheme,
+  onSelectTheme,
   onToggleSound,
   onPet
 }) => {
   const [showSettingsModal, setShowSettingsModal] = useState(false);
-  const [timeOfDay, setTimeOfDay] = useState<DayNightTimeOfDay>(() => getDayNightTimeOfDay());
+  const [localTimeOfDay, setLocalTimeOfDay] = useState<DayNightTimeOfDay>(() => getDayNightTimeOfDay());
   const [currentTimeStr, setCurrentTimeStr] = useState<string>(() => {
     const d = new Date();
     return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
   });
 
+  const timeOfDay = externalTimeOfDay || localTimeOfDay;
+
   useEffect(() => {
     const timer = setInterval(() => {
       const now = new Date();
-      setTimeOfDay(getDayNightTimeOfDay(now));
+      setLocalTimeOfDay(getDayNightTimeOfDay(now));
       setCurrentTimeStr(`${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`);
     }, 10000);
     return () => clearInterval(timer);
@@ -156,13 +168,32 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({
           <span className="text-[10px] text-amber-300 font-sans">たまごっち</span>
         </div>
 
-        <div className="flex items-center gap-2">
-          {/* Day / Night Real-time Pill */}
-          <div className="flex items-center gap-1.5 bg-slate-900/90 backdrop-blur-md px-2.5 py-1 rounded-full border border-slate-700/80 text-[11px] font-mono text-slate-200 shadow-md">
+        <div className="flex items-center gap-1.5">
+          {/* Day / Night Interactive Pill (Click to toggle dawn/day/sunset/night) */}
+          <button
+            onClick={() => {
+              soundManager.playSelect();
+              if (onCycleTimeOfDay) onCycleTimeOfDay();
+            }}
+            className="flex items-center gap-1.5 bg-slate-900/90 hover:bg-slate-800 backdrop-blur-md px-2.5 py-1 rounded-full border border-slate-700/80 text-[11px] font-mono text-slate-200 shadow-md cursor-pointer transition-all active:scale-95"
+            title="Cambiar Ciclo Día / Noche Visual"
+          >
             {dayNightInfo.icon}
             <span>{currentTimeStr}</span>
-            <span className="text-[9px] font-sans font-bold text-amber-400 opacity-80">{dayNightInfo.label}</span>
-          </div>
+            <span className="text-[9px] font-sans font-bold text-amber-400 opacity-90">{dayNightInfo.label}</span>
+          </button>
+
+          {/* Duolingo Notification Button */}
+          <button
+            onClick={() => {
+              soundManager.playSelect();
+              onOpenNotifications();
+            }}
+            className="w-8 h-8 rounded-full bg-slate-900/80 hover:bg-slate-800 border border-emerald-500/60 text-emerald-400 flex items-center justify-center cursor-pointer transition-all active:scale-90 shadow-md"
+            title="Notificaciones Estilo Duolingo"
+          >
+            <Bell className="w-4 h-4" />
+          </button>
 
           {/* Audio Quick Button */}
           <button
@@ -217,7 +248,11 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({
           initial={{ scale: 0.9, opacity: 0 }}
           animate={{ scale: 1, opacity: 1 }}
           transition={{ duration: 0.35 }}
-          className={`relative w-64 sm:w-72 aspect-[1/1.22] rounded-[48%_48%_44%_44%/56%_56%_40%_40%] bg-gradient-to-b from-sky-400 via-cyan-400 to-teal-500 p-4 sm:p-5 shadow-[0_16px_35px_rgba(0,0,0,0.65),inset_0_4px_12px_rgba(255,255,255,0.7),inset_0_-8px_16px_rgba(0,0,0,0.35)] border-4 border-white/80 flex flex-col items-center justify-between transition-all ${dayNightInfo.glow}`}
+          className={`relative w-64 sm:w-72 aspect-[1/1.22] rounded-[48%_48%_44%_44%/56%_56%_40%_40%] bg-gradient-to-b ${
+            THEME_CONFIGS[theme]?.body || 'from-yellow-400 via-amber-400 to-yellow-500'
+          } p-4 sm:p-5 shadow-[0_16px_35px_rgba(0,0,0,0.65),inset_0_4px_12px_rgba(255,255,255,0.7),inset_0_-8px_16px_rgba(0,0,0,0.35)] border-4 ${
+            THEME_CONFIGS[theme]?.border || 'border-amber-600'
+          } flex flex-col items-center justify-between transition-all ${dayNightInfo.glow}`}
         >
           {/* Tamagotchi Keychain Ring Hole at top */}
           <div className="w-5 h-5 rounded-full bg-slate-900 border-2 border-white/90 shadow-inner -mt-1 flex items-center justify-center">
@@ -256,10 +291,11 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({
               </span>
             </div>
 
-            {/* Central Animated Chick / Egg in Pure B&W Pixel Style */}
+            {/* Central Animated Chick / Dog / Egg in Pure B&W Pixel Style */}
             <div className="relative z-10 my-auto flex items-center justify-center scale-90 group-hover:scale-95 transition-transform">
               <EggPetRenderer
                 stage={state.stage}
+                species={state.species}
                 mood={state.isSleeping ? 'sleeping' : state.isSick ? 'sick' : 'happy'}
                 poopCount={0}
                 isSick={state.isSick}
@@ -437,16 +473,28 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({
               <span>ZUMBA (20 min)</span>
             </button>
 
+            {/* Notificaciones Duolingo */}
+            <button
+              onClick={() => {
+                soundManager.playSelect();
+                onOpenNotifications();
+              }}
+              className="py-2.5 px-3 rounded-xl bg-gradient-to-r from-emerald-950/80 to-teal-950/80 hover:from-emerald-900/90 border-2 border-emerald-400/60 text-emerald-300 font-black text-xs flex items-center justify-center gap-1.5 shadow-md cursor-pointer transition-all active:scale-95"
+            >
+              <Bell className="w-3.5 h-3.5 fill-current" />
+              <span>ALERTAS DUOLINGO</span>
+            </button>
+
             {/* Nueva Mascota */}
             <button
               onClick={() => {
                 soundManager.playSelect();
                 onOpenNewPet();
               }}
-              className="col-span-2 py-2 px-3 rounded-xl bg-slate-900/90 hover:bg-slate-800 border-2 border-amber-500/40 text-amber-300 font-black text-xs flex items-center justify-center gap-1.5 shadow-md cursor-pointer transition-all active:scale-95"
+              className="py-2.5 px-3 rounded-xl bg-slate-900/90 hover:bg-slate-800 border-2 border-amber-500/40 text-amber-300 font-black text-xs flex items-center justify-center gap-1.5 shadow-md cursor-pointer transition-all active:scale-95"
             >
               <Plus className="w-3.5 h-3.5 stroke-[3]" />
-              <span>CREAR NUEVA MASCOTA</span>
+              <span>NUEVA MASCOTA</span>
             </button>
           </div>
         </div>
@@ -549,15 +597,49 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({
                   </button>
                 </div>
 
-                {/* Theme Switcher */}
-                <div className="flex items-center justify-between p-2.5 rounded-xl bg-slate-950 border border-slate-800">
-                  <span className="font-bold text-slate-200">Color de Carcasa:</span>
-                  <button
-                    onClick={onToggleTheme}
-                    className="px-3 py-1 rounded-lg bg-amber-400 text-slate-950 font-black"
-                  >
-                    Cambiar Color
-                  </button>
+                {/* Theme Switcher with Full Color Palette */}
+                <div className="p-3 rounded-2xl bg-slate-950 border border-slate-800 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold text-slate-200">Color de Carcasa Tamagotchi:</span>
+                    <span className="text-[10px] font-mono text-amber-300 capitalize font-bold">
+                      {THEME_CONFIGS[theme]?.name || theme}
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-3 gap-1.5 pt-1">
+                    {(
+                      [
+                        { id: 'neon-yellow', name: 'Amarillo Neón', bg: 'bg-yellow-400' },
+                        { id: 'cyber-purple', name: 'Púrpura Cyber', bg: 'bg-purple-500' },
+                        { id: 'retro-teal', name: 'Teal Retro', bg: 'bg-teal-400' },
+                        { id: 'coral-pink', name: 'Rosa Coral', bg: 'bg-rose-400' },
+                        { id: 'midnight-black', name: 'Negro Medianoche', bg: 'bg-slate-800' },
+                        { id: 'vintage-white', name: 'Blanco Vintage', bg: 'bg-slate-200' }
+                      ] as const
+                    ).map((t) => {
+                      const isSelected = theme === t.id;
+                      return (
+                        <button
+                          key={t.id}
+                          onClick={() => {
+                            soundManager.playBeep(1200, 0.02);
+                            if (onSelectTheme) {
+                              onSelectTheme(t.id);
+                            } else {
+                              onToggleTheme();
+                            }
+                          }}
+                          className={`flex items-center gap-1.5 p-1.5 rounded-xl border text-[10px] font-bold transition-all cursor-pointer ${
+                            isSelected
+                              ? 'border-amber-400 bg-amber-400/20 text-white shadow-md'
+                              : 'border-slate-800 bg-slate-900/60 text-slate-300 hover:bg-slate-800'
+                          }`}
+                        >
+                          <span className={`w-3.5 h-3.5 rounded-full shrink-0 ${t.bg} ring-1 ring-white/40`} />
+                          <span className="truncate">{t.name}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
                 </div>
 
                 {/* Achievements Link */}

@@ -20,18 +20,18 @@ import { soundManager } from '../services/soundEffects';
 
 interface AchievementsModalProps {
   achievements: Achievement[];
-  isOpen: boolean;
+  isOpen?: boolean;
   onClose: () => void;
 }
 
 export const AchievementsModal: React.FC<AchievementsModalProps> = ({
   achievements,
-  isOpen,
+  isOpen = true,
   onClose
 }) => {
   const [filterCategory, setFilterCategory] = useState<'all' | 'health' | 'survival' | 'zumba' | 'care'>('all');
 
-  if (!isOpen) return null;
+  if (isOpen === false) return null;
 
   const unlockedCount = achievements.filter((a) => a.unlocked).length;
   const totalCount = achievements.length;

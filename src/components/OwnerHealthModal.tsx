@@ -18,8 +18,10 @@ import { soundManager } from '../services/soundEffects';
 
 interface OwnerHealthModalProps {
   habits: OwnerHabitsState;
-  petState: TamagotchiState;
-  isOpen: boolean;
+  petName?: string;
+  isPetSleeping?: boolean;
+  petState?: TamagotchiState;
+  isOpen?: boolean;
   onClose: () => void;
   onDrinkWater: () => void;
   onTakePills: () => void;
@@ -28,15 +30,19 @@ interface OwnerHealthModalProps {
 
 export const OwnerHealthModal: React.FC<OwnerHealthModalProps> = ({
   habits,
+  petName,
+  isPetSleeping,
   petState,
-  isOpen,
+  isOpen = true,
   onClose,
   onDrinkWater,
   onTakePills,
   onCompleteSleepRoutine
 }) => {
-  if (!isOpen) return null;
+  if (isOpen === false) return null;
 
+  const resolvedPetName = petName || petState?.name || 'tu mascota';
+  const resolvedIsSleeping = isPetSleeping !== undefined ? isPetSleeping : petState?.isSleeping || false;
   const waterGlasses = habits.waterGlassesToday || 0;
   const isPillsTaken = habits.pillsTakenToday || false;
   const isSleepDone = habits.sleepRoutineDoneToday || false;
@@ -60,7 +66,7 @@ export const OwnerHealthModal: React.FC<OwnerHealthModalProps> = ({
                 SALUD & AUTOCUIDADO DEL DUEÑO
               </h2>
               <p className="text-[11px] text-slate-400">
-                Tus hábitos reales protegen directamente a {petState.name} del frío y enfermedades
+                Tus hábitos reales protegen directamente a {resolvedPetName} del frío y enfermedades
               </p>
             </div>
           </div>
@@ -111,7 +117,7 @@ export const OwnerHealthModal: React.FC<OwnerHealthModalProps> = ({
                 const isFilled = index < waterGlasses;
                 return (
                   <button
-                    key={index}
+                    key={`water-glass-${index}`}
                     onClick={() => {
                       if (!isFilled) {
                         onDrinkWater();
@@ -225,10 +231,10 @@ export const OwnerHealthModal: React.FC<OwnerHealthModalProps> = ({
             <div className="p-3 rounded-xl bg-slate-900/90 border border-slate-800 flex items-center justify-between">
               <div className="space-y-0.5">
                 <span className="text-xs font-bold text-slate-200 block">
-                  {petState.isSleeping ? '😴 Tu mascota está durmiendo plácidamente' : 'Preparar hora de dormir del dueño & mascota'}
+                  {resolvedIsSleeping ? '😴 Tu mascota está durmiendo plácidamente' : 'Preparar hora de dormir del dueño & mascota'}
                 </span>
                 <span className="text-[11px] text-indigo-300">
-                  {petState.isSleeping ? 'Apagó las luces y activó la manta térmica' : 'Otorga +20% de Salud Vital y escudo contra el frío'}
+                  {resolvedIsSleeping ? 'Apagó las luces y activó la manta térmica' : 'Otorga +20% de Salud Vital y escudo contra el frío'}
                 </span>
               </div>
 
@@ -237,7 +243,7 @@ export const OwnerHealthModal: React.FC<OwnerHealthModalProps> = ({
                 className="px-4 py-2 rounded-xl font-black text-xs flex items-center gap-1.5 transition-all shadow-md active:scale-95 bg-indigo-500 hover:bg-indigo-400 text-slate-950 cursor-pointer shadow-indigo-500/25"
               >
                 <Moon className="w-4 h-4" />
-                <span>{petState.isSleeping ? '☀️ Despertar ahora' : '💤 Iniciar Rutina de Sueño'}</span>
+                <span>{resolvedIsSleeping ? '☀️ Despertar ahora' : '💤 Iniciar Rutina de Sueño'}</span>
               </button>
             </div>
           </div>

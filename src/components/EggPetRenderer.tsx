@@ -1,9 +1,11 @@
 import React from 'react';
 import { motion } from 'motion/react';
-import { EvolutionStage, DisplayMode, ActiveScreen } from '../types/tamagotchi';
+import { EvolutionStage, DisplayMode, ActiveScreen, PetSpecies } from '../types/tamagotchi';
+import { DogPetRenderer } from './DogPetRenderer';
 
 interface EggPetRendererProps {
   stage: EvolutionStage;
+  species?: PetSpecies;
   displayMode?: DisplayMode;
   isSleeping?: boolean;
   lightsOn?: boolean;
@@ -21,10 +23,14 @@ interface EggPetRendererProps {
   healthPercent?: number;
   onPetClick?: () => void;
   scale?: number;
+  eggCrackLevel?: number;
+  mood?: string;
+  isMiniGameMultiplePets?: boolean;
 }
 
 export const EggPetRenderer: React.FC<EggPetRendererProps> = ({
   stage,
+  species = 'chick',
   displayMode = 'lcd-green',
   isSleeping = false,
   lightsOn = true,
@@ -35,11 +41,41 @@ export const EggPetRenderer: React.FC<EggPetRendererProps> = ({
   disciplinePercent = 0,
   activeScreen = 'main',
   foodType = 'meal',
+  gameStep = 'idle',
   petDirection = 'left',
+  playerDirection = 'left',
+  gameResult = null,
   healthPercent = 100,
   onPetClick,
-  scale = 1.0
+  scale = 1.0,
+  isMiniGameMultiplePets = false
 }) => {
+  if (species === 'dog') {
+    return (
+      <DogPetRenderer
+        stage={stage}
+        displayMode={displayMode}
+        isSleeping={isSleeping}
+        lightsOn={lightsOn}
+        isSick={isSick}
+        poopCount={poopCount}
+        hungryHearts={hungryHearts}
+        happyHearts={happyHearts}
+        disciplinePercent={disciplinePercent}
+        activeScreen={activeScreen}
+        foodType={foodType}
+        gameStep={gameStep}
+        petDirection={petDirection}
+        playerDirection={playerDirection}
+        gameResult={gameResult}
+        healthPercent={healthPercent}
+        onPetClick={onPetClick}
+        scale={scale}
+        isMiniGameMultiplePets={isMiniGameMultiplePets}
+      />
+    );
+  }
+
   const isPixel = displayMode === 'pixel-retro';
   const isLcd = displayMode === 'lcd-green';
   const isDarkSleep = isSleeping || !lightsOn;

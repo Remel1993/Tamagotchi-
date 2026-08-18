@@ -24,7 +24,7 @@ import {
   ActiveScreen,
   MiniGameType
 } from '../types/tamagotchi';
-import { STAGES_CONFIG } from '../services/storage';
+import { STAGES_CONFIG, getStageConfig } from '../services/storage';
 import { soundManager } from '../services/soundEffects';
 import {
   getPettingPhrase,
@@ -52,6 +52,7 @@ interface TamagotchiDeviceProps {
   onMiniGameComplete: (won: boolean) => void;
   onResetNewEgg: () => void;
   onPet: () => void;
+  hasMultiplePets?: boolean;
 }
 
 export const TamagotchiDevice: React.FC<TamagotchiDeviceProps> = ({
@@ -68,7 +69,8 @@ export const TamagotchiDevice: React.FC<TamagotchiDeviceProps> = ({
   onDiscipline,
   onMiniGameComplete,
   onResetNewEgg,
-  onPet
+  onPet,
+  hasMultiplePets = false
 }) => {
   // Navigation & Subscreen states
   const [selectedIconIdx, setSelectedIconIdx] = useState<number | null>(null);
@@ -121,7 +123,7 @@ export const TamagotchiDevice: React.FC<TamagotchiDeviceProps> = ({
   // Animation temporary states
   const [animationType, setAnimationType] = useState<ActiveScreen | null>(null);
 
-  const stageConfig = STAGES_CONFIG[state.stage];
+  const stageConfig = getStageConfig(state.stage, state.species);
 
   // --- GAME 1: Falling spark physics loop ---
   useEffect(() => {
@@ -554,7 +556,7 @@ export const TamagotchiDevice: React.FC<TamagotchiDeviceProps> = ({
       soundManager.playSelect();
       switch (selectedIconIdx) {
         case 0: // Feed
-          if (state.stage < EvolutionStage.BABY_CHICK) {
+          if (state.species !== 'dog' && state.stage < EvolutionStage.BABY_CHICK) {
             soundManager.playRefuse();
             showToast('¡El huevo absorbe calor, aún no come sólidos!');
             return;
@@ -562,22 +564,14 @@ export const TamagotchiDevice: React.FC<TamagotchiDeviceProps> = ({
           setActiveScreen('food_select');
           break;
 
-        case 1: // Lights
-          if (state.isSleeping || !state.lightsOn) {
-            const sleepElapsed = (state.elapsedSeconds || 0) - (state.sleepStartSeconds || 0);
-            const SLEEP_DURATION = 8 * 3600; // 28,800 seconds (8 hours)
-            if (sleepElapsed < SLEEP_DURATION && (state.sleepStartSeconds !== undefined)) {
-              soundManager.playRefuse();
-              const remSec = Math.max(0, SLEEP_DURATION - sleepElapsed);
-              const remHours = Math.floor(remSec / 3600);
-              const remMin = Math.floor((remSec % 3600) / 60);
-              showToast(`💤 Duerme profundamente (Restan ${remHours > 0 ? `${remHours}h ` : ''}${remMin}m de 8h). Despertará solo.`);
-              return;
-            }
-          }
+        case 1: // Lights & Sleep / Wake Control
           soundManager.playLightSwitch();
           onToggleLights();
-          showToast(state.lightsOn ? '🌙 Luz apagada: Ciclo de 8h de sueño iniciado' : '☀️ Luz encendida: ¡Buenos días!');
+          showToast(
+            state.isSleeping || !state.lightsOn
+              ? '☀️ ¡Mascota despierta y luz encendida!'
+              : '🌙 ¡Luz apagada y mascota durmiendo con manta!'
+          );
           break;
 
         case 2: // Game Selection Menu
@@ -630,7 +624,7 @@ export const TamagotchiDevice: React.FC<TamagotchiDeviceProps> = ({
           break;
 
         case 6: // Discipline
-          if (state.stage < EvolutionStage.BABY_CHICK) {
+          if (state.species !== 'dog' && state.stage < EvolutionStage.BABY_CHICK) {
             soundManager.playRefuse();
             showToast('¡El huevo está incubando con tranquilidad!');
             return;
@@ -711,9 +705,10 @@ export const TamagotchiDevice: React.FC<TamagotchiDeviceProps> = ({
 
   // Render Status Meter Page
   const renderStatusPage = () => {
+    const isEgg = state.species !== 'dog' && state.stage < EvolutionStage.BABY_CHICK;
+
     switch (meterPage) {
       case 0: // Age & Weight / Stage
-        const isEgg = state.stage < EvolutionStage.BABY_CHICK;
         return (
           <div className="w-full h-full flex flex-col items-center justify-center space-y-2 p-2 text-center">
             <span className="text-xs font-black tracking-wider uppercase border-b-2 border-current pb-0.5">
@@ -723,7 +718,9 @@ export const TamagotchiDevice: React.FC<TamagotchiDeviceProps> = ({
               <div>EDAD: {state.ageDays} / 7 DÍAS</div>
               <div>{isEgg ? `FASE: ${stageConfig.name}` : `PESO: ${state.weightGrams} g`}</div>
               <div className="text-[10px] mt-0.5 opacity-75">
-                {isEgg ? `Eclosión: Día 5 (Faltan ${Math.max(0, 5 - state.ageDays)}d)` : `GENERACIÓN: G${state.generation}`}
+                {isEgg
+                  ? `Eclosión: Día 5 (Faltan ${Math.max(0, 5 - state.ageDays)}d)`
+                  : `FASE: ${stageConfig.name}`}
               </div>
             </div>
             <span className="text-[9px] opacity-70 mt-1">Pág 1/5 • Pulsa A para ver más</span>
@@ -732,13 +729,18 @@ export const TamagotchiDevice: React.FC<TamagotchiDeviceProps> = ({
 
       case 1: // Vital Health & Temperature Bar (0-100%)
         const hp = typeof state.healthPercent === 'number' ? state.healthPercent : 100;
-        const isEggStage = state.stage < EvolutionStage.BABY_CHICK;
+        const isEggStage = isEgg;
+        const isDog = state.species === 'dog';
         const eggTemp = (36.0 + (hp / 100) * 2.2).toFixed(1);
-        const hpStatus = hp > 70 ? (isEggStage ? '🔥 Óptimo y Cálido' : 'Excelente') : hp > 40 ? (isEggStage ? '♨️ Tibio' : 'Estable') : hp > 20 ? (isEggStage ? '❄️ ¡Enfriándose!' : '¡Alerta!') : (isEggStage ? '🧊 ¡PELIGRO FRÍO!' : '¡CRÍTICA!');
+        const hpStatus = hp > 70 ? (isEggStage ? '🔥 Óptimo y Cálido' : isDog ? '🐶 Salud Excelente' : 'Excelente') : hp > 40 ? (isEggStage ? '♨️ Tibio' : 'Estable') : hp > 20 ? (isEggStage ? '❄️ ¡Enfriándose!' : '¡Alerta!') : (isEggStage ? '🧊 ¡PELIGRO FRÍO!' : '¡CRÍTICA!');
         return (
           <div className="w-full h-full flex flex-col items-center justify-center space-y-1.5 p-2 text-center">
             <span className="text-xs font-black tracking-wider uppercase border-b-2 border-current pb-0.5">
-              {isEggStage ? '- CALOR VITAL & SALUD -' : '- BARRA DE SALUD (6H / 24H) -'}
+              {isEggStage
+                ? '- CALOR VITAL & SALUD -'
+                : isDog
+                ? '- CALOR VITAL & ALIMENTACIÓN -'
+                : '- BARRA DE SALUD (6H / 24H) -'}
             </span>
             <div className="w-44 h-5 border-2 border-current p-0.5 rounded-xs my-1 flex bg-black/10">
               <div
@@ -749,12 +751,14 @@ export const TamagotchiDevice: React.FC<TamagotchiDeviceProps> = ({
               />
             </div>
             <div className="flex items-center justify-center gap-2 font-mono text-xs font-bold">
-              <span>{isEggStage ? `🌡️ ${eggTemp}°C (${hp}%)` : `${hp}%`}</span>
+              <span>{isEggStage ? `🌡️ ${eggTemp}°C (${hp}%)` : `❤️ Salud: ${hp}%`}</span>
               <span className="text-[10px] opacity-80 uppercase">({hpStatus})</span>
             </div>
             <span className="text-[8px] opacity-75 text-center leading-tight">
               {isEggStage
                 ? 'El huevo absorbe calor con caricias, minijuegos y Zumba'
+                : isDog
+                ? 'Mantén su calor vital y energía con croquetas, caricias, juegos y Zumba'
                 : 'Baja gradualmente: en 6h a 75%, en 24h a 0%'}
             </span>
             <span className="text-[9px] opacity-70">Pág 2/5 • Pulsa A para ver más</span>
@@ -762,7 +766,7 @@ export const TamagotchiDevice: React.FC<TamagotchiDeviceProps> = ({
         );
 
       case 2: // Egg Warmth Sources / Hungry Hearts
-        if (state.stage < EvolutionStage.BABY_CHICK) {
+        if (isEgg) {
           return (
             <div className="w-full h-full flex flex-col items-center justify-center space-y-1 p-2 text-left">
               <span className="text-[11px] font-black tracking-wider uppercase border-b-2 border-current pb-0.5 text-center w-full">
@@ -797,7 +801,7 @@ export const TamagotchiDevice: React.FC<TamagotchiDeviceProps> = ({
         );
 
       case 3: // Egg Nest Protection / Happy Hearts
-        if (state.stage < EvolutionStage.BABY_CHICK) {
+        if (isEgg) {
           return (
             <div className="w-full h-full flex flex-col items-center justify-center space-y-1 p-2 text-left">
               <span className="text-[11px] font-black tracking-wider uppercase border-b-2 border-current pb-0.5 text-center w-full">
@@ -835,7 +839,7 @@ export const TamagotchiDevice: React.FC<TamagotchiDeviceProps> = ({
         return (
           <div className="w-full h-full flex flex-col items-center justify-center space-y-2 p-2">
             <span className="text-xs font-black tracking-wider uppercase border-b-2 border-current pb-0.5">
-              {state.stage < EvolutionStage.BABY_CHICK ? '- CUIDADO DEL NIDO -' : '- DISCIPLINA -'}
+              {isEgg ? '- CUIDADO DEL NIDO -' : '- DISCIPLINA -'}
             </span>
             <div className="w-40 h-6 border-2 border-current p-0.5 rounded-xs my-2 flex">
               <div
@@ -853,9 +857,9 @@ export const TamagotchiDevice: React.FC<TamagotchiDeviceProps> = ({
     }
   };
 
-  // Render Food Selection Menu
+  // Render Food Selection Screen
   const renderFoodSelect = () => {
-    const isEgg = state.stage < EvolutionStage.BABY_CHICK;
+    const isEgg = state.species !== 'dog' && state.stage < EvolutionStage.BABY_CHICK;
     if (isEgg) {
       return (
         <div className="w-full h-full flex flex-col items-center justify-center space-y-2 p-2.5">
@@ -898,10 +902,11 @@ export const TamagotchiDevice: React.FC<TamagotchiDeviceProps> = ({
       );
     }
 
+    const isDog = state.species === 'dog';
     return (
       <div className="w-full h-full flex flex-col items-center justify-center space-y-3 p-3">
         <span className="text-xs font-black uppercase tracking-wider border-b-2 border-current pb-0.5">
-          - SELECCIÓN DE COMIDA -
+          {isDog ? '- COMIDA PARA PERRITO -' : '- SELECCIÓN DE COMIDA -'}
         </span>
         <div className="flex items-center justify-around w-full px-4">
           {/* Meal Choice */}
@@ -913,8 +918,8 @@ export const TamagotchiDevice: React.FC<TamagotchiDeviceProps> = ({
             }`}
             onClick={() => setFoodChoice('meal')}
           >
-            <span className="text-3xl">🍚</span>
-            <span className="text-[11px] font-bold mt-1">COMIDA</span>
+            <span className="text-3xl">{isDog ? '🥣' : '🍚'}</span>
+            <span className="text-[11px] font-bold mt-1">{isDog ? 'CROQUETAS' : 'COMIDA'}</span>
             <span className="text-[9px] opacity-75">+1 Hambre, +5% Salud</span>
           </div>
 
@@ -927,8 +932,8 @@ export const TamagotchiDevice: React.FC<TamagotchiDeviceProps> = ({
             }`}
             onClick={() => setFoodChoice('snack')}
           >
-            <span className="text-3xl">🍰</span>
-            <span className="text-[11px] font-bold mt-1">POSTRE</span>
+            <span className="text-3xl">{isDog ? '🦴' : '🍰'}</span>
+            <span className="text-[11px] font-bold mt-1">{isDog ? 'HUESITO' : 'POSTRE'}</span>
             <span className="text-[9px] opacity-75">+1 Feliz, +2g</span>
           </div>
         </div>
@@ -1162,9 +1167,11 @@ export const TamagotchiDevice: React.FC<TamagotchiDeviceProps> = ({
                         <div className="w-10 h-10 flex items-center justify-center">
                           <EggPetRenderer
                             stage={state.stage}
+                            species={state.species}
                             displayMode={displayMode}
                             activeScreen="game"
                             scale={0.42}
+                            isMiniGameMultiplePets={hasMultiplePets}
                           />
                         </div>
                         <div className="text-[10px] leading-none -mt-1.5">🪹</div>
@@ -1226,7 +1233,14 @@ export const TamagotchiDevice: React.FC<TamagotchiDeviceProps> = ({
                   transition={{ duration: 0.3, repeat: Infinity }}
                   className="w-20 h-20 mx-auto flex items-center justify-center"
                 >
-                  <EggPetRenderer stage={state.stage} displayMode={displayMode} activeScreen="game" scale={0.7} />
+                  <EggPetRenderer
+                    stage={state.stage}
+                    species={state.species}
+                    displayMode={displayMode}
+                    activeScreen="game"
+                    scale={0.7}
+                    isMiniGameMultiplePets={hasMultiplePets}
+                  />
                 </motion.div>
                 <div className="text-xs font-black tracking-widest text-amber-500 animate-pulse">
                   ¡PREPÁRATE! {lrCountdown > 0 ? lrCountdown : '¡YA!'}
@@ -1238,7 +1252,14 @@ export const TamagotchiDevice: React.FC<TamagotchiDeviceProps> = ({
             {lrPhase === 'choice' && (
               <div className="space-y-2">
                 <div className="w-20 h-20 mx-auto flex items-center justify-center">
-                  <EggPetRenderer stage={state.stage} displayMode={displayMode} activeScreen="game" scale={0.7} />
+                  <EggPetRenderer
+                    stage={state.stage}
+                    species={state.species}
+                    displayMode={displayMode}
+                    activeScreen="game"
+                    scale={0.7}
+                    isMiniGameMultiplePets={hasMultiplePets}
+                  />
                 </div>
                 <div className="text-xs font-black uppercase text-cyan-600 dark:text-cyan-300">
                   ¡ELIGE AHORA! ⬅️ O ➡️
@@ -1257,7 +1278,15 @@ export const TamagotchiDevice: React.FC<TamagotchiDeviceProps> = ({
                   }}
                   className="w-20 h-20 mx-auto flex items-center justify-center"
                 >
-                  <EggPetRenderer stage={state.stage} displayMode={displayMode} activeScreen="game" scale={0.75} />
+                  <EggPetRenderer
+                    stage={state.stage}
+                    species={state.species}
+                    displayMode={displayMode}
+                    activeScreen="game"
+                    scale={0.75}
+                    petDirection={lrPetDirection}
+                    isMiniGameMultiplePets={hasMultiplePets}
+                  />
                 </motion.div>
                 <div className="text-sm font-black">
                   {lrPlayerGuess === lrPetDirection ? (
@@ -1321,7 +1350,14 @@ export const TamagotchiDevice: React.FC<TamagotchiDeviceProps> = ({
               {/* Target Beat Hit Zone on Left (where the pet is dancing) */}
               <div className="relative z-10 flex flex-col items-center">
                 <div className="w-12 h-12 rounded-full border-3 border-current/60 bg-black/15 flex items-center justify-center shadow-md animate-pulse">
-                  <EggPetRenderer stage={state.stage} displayMode={displayMode} activeScreen="game" scale={0.45} />
+                  <EggPetRenderer
+                    stage={state.stage}
+                    species={state.species}
+                    displayMode={displayMode}
+                    activeScreen="game"
+                    scale={0.45}
+                    isMiniGameMultiplePets={hasMultiplePets}
+                  />
                 </div>
                 <span className="text-[8px] font-black uppercase mt-0.5">🎯 ZONA HIT</span>
               </div>
@@ -1565,7 +1601,7 @@ export const TamagotchiDevice: React.FC<TamagotchiDeviceProps> = ({
               // Main Normal Pet Living Screen
               <>
                 {/* Top Status Header inside LCD */}
-                <div className="w-full flex items-center justify-between z-10 text-[9px] font-bold px-0.5 pb-0.5 border-b border-black/10 shrink-0">
+                <div className="w-full flex items-center justify-between relative z-30 text-[9px] font-bold px-1 py-0.5 border-b border-black/15 bg-black/5 rounded-t-lg shrink-0">
                   <div className="flex items-center gap-1">
                     <span className="bg-black/20 px-1.5 py-0.5 rounded font-mono text-[9px]">
                       {state.name}
@@ -1591,8 +1627,8 @@ export const TamagotchiDevice: React.FC<TamagotchiDeviceProps> = ({
                     <span className="truncate">{emotionInfo.label}</span>
                   </button>
 
-                  {/* Egg Temperature or Hungry/Happy heart icons preview */}
-                  {state.stage < EvolutionStage.BABY_CHICK ? (
+                  {/* Egg Temperature (only chick eggs) or Hungry/Happy heart icons preview */}
+                  {state.species !== 'dog' && state.stage < EvolutionStage.BABY_CHICK ? (
                     <div
                       className="flex items-center gap-1 font-mono text-[9px] font-black bg-amber-500/20 text-amber-950 dark:text-amber-300 px-1.5 py-0.5 rounded cursor-pointer border border-amber-500/40"
                       title="Calor Vital e Incubación: El huevo absorbe calor con caricias, minijuegos y Zumba. Pulsa para ver."
@@ -1619,7 +1655,7 @@ export const TamagotchiDevice: React.FC<TamagotchiDeviceProps> = ({
                   )}
                 </div>
 
-                {/* Interactive Dialogue Speech Balloon & Action Toast (Small, readable, non-cut, auto-dismissing) */}
+                {/* Interactive Dialogue Speech Balloon & Action Toast (Positioned cleanly below header so numeric data is never covered) */}
                 <AnimatePresence>
                   {currentDialogue && !state.isDead ? (
                     <motion.div
@@ -1629,7 +1665,7 @@ export const TamagotchiDevice: React.FC<TamagotchiDeviceProps> = ({
                       exit={{ opacity: 0, scale: 0.92, y: -2 }}
                       transition={{ duration: 0.18 }}
                       onClick={() => setCurrentDialogue(null)}
-                      className="absolute top-7 left-1/2 -translate-x-1/2 max-w-[92%] z-30 bg-amber-50/95 text-amber-950 dark:bg-slate-900/95 dark:text-amber-200 border border-amber-400/80 px-2.5 py-1 rounded-lg shadow-md flex items-center justify-center gap-1.5 text-[8.5px] sm:text-[9.5px] font-bold cursor-pointer active:scale-95 text-center leading-snug backdrop-blur-xs select-none"
+                      className="absolute top-8 sm:top-9 left-1/2 -translate-x-1/2 max-w-[94%] z-20 bg-amber-50/95 text-amber-950 dark:bg-slate-900/95 dark:text-amber-200 border border-amber-400/80 px-2.5 py-1 rounded-lg shadow-md flex items-center justify-center gap-1.5 text-[8.5px] sm:text-[9.5px] font-bold cursor-pointer active:scale-95 text-center leading-snug backdrop-blur-xs select-none"
                       title="Haz clic para cerrar"
                     >
                       <span className="text-xs shrink-0">{currentDialogue.emoji}</span>
@@ -1642,7 +1678,7 @@ export const TamagotchiDevice: React.FC<TamagotchiDeviceProps> = ({
                       animate={{ opacity: 1, scale: 1, y: 0 }}
                       exit={{ opacity: 0, scale: 0.92, y: -2 }}
                       transition={{ duration: 0.18 }}
-                      className="absolute top-7 left-1/2 -translate-x-1/2 max-w-[92%] z-30 bg-black/80 text-amber-300 border border-amber-400/50 px-2.5 py-1 rounded-lg shadow-md flex items-center justify-center gap-1.5 text-[8.5px] sm:text-[9.5px] font-bold text-center leading-snug backdrop-blur-xs select-none pointer-events-none"
+                      className="absolute top-8 sm:top-9 left-1/2 -translate-x-1/2 max-w-[94%] z-20 bg-black/85 text-amber-300 border border-amber-400/50 px-2.5 py-1 rounded-lg shadow-md flex items-center justify-center gap-1.5 text-[8.5px] sm:text-[9.5px] font-bold text-center leading-snug backdrop-blur-xs select-none pointer-events-none"
                     >
                       <span className="break-words font-semibold text-center leading-tight">{speechToast}</span>
                     </motion.div>
@@ -1653,6 +1689,7 @@ export const TamagotchiDevice: React.FC<TamagotchiDeviceProps> = ({
                 <div className="my-auto z-10 flex flex-col items-center justify-center flex-1 w-full min-h-[140px]">
                   <EggPetRenderer
                     stage={state.stage}
+                    species={state.species}
                     displayMode={displayMode}
                     isSleeping={state.isSleeping}
                     lightsOn={state.lightsOn}
@@ -1665,6 +1702,7 @@ export const TamagotchiDevice: React.FC<TamagotchiDeviceProps> = ({
                     foodType={foodChoice}
                     healthPercent={state.healthPercent ?? state.health ?? 100}
                     onPetClick={triggerPettingWithDialogue}
+                    isMiniGameMultiplePets={hasMultiplePets}
                   />
                 </div>
 
